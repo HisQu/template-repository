@@ -1,7 +1,6 @@
 name: General Issue
 description: 
 title: "Bitte ändern..."
-labels: ""
 projects: ["HisQu/1"]
 body:
   - type: markdown
@@ -14,6 +13,6 @@ body:
       label: Aufgabe
       description: Was ist die zu erledigende Aufgabe? Bitte mgl. verständlich spezifizieren.
       placeholder: Arbeitsauftrag hier
-      value: ""
+      value: "..."
     validations:
       required: true
