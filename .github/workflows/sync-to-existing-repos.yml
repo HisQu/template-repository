@@ -43,7 +43,6 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const { Buffer } = require('buffer'); // Needed for Base64 encoding
-            const core = require('@actions/core'); // Use core for logging/errors
 
             // --- Inputs ---
             const templateRepoInput = "${{ github.event.inputs.template_repo }}";
