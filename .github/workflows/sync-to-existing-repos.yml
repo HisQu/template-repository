@@ -10,7 +10,7 @@ on:
       template_repo:
         description: 'Template repository (owner/repo)'
         required: true
-        default: 'your-org/your-template-repo' # <-- IMPORTANT: SET YOUR TEMPLATE REPO HERE
+        default: 'HisQu/template-repository'
       force_update_issue_templates:
         description: 'Overwrite existing issue templates in target repos? (true/false)'
         required: true
@@ -29,7 +29,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           # Use the PAT stored as a secret
-          SYNC_PAT: ${{ secrets.ORG_SYNC_PAT }} # <-- Make sure this matches your secret name
+          SYNC_PAT: ${{ secrets.ORG_SYNC_PAT }}
           TEMPLATE_REPO_PATH: ${{ github.workspace }} # Path where template code is checked out
         with:
           # Use the PAT for API calls
