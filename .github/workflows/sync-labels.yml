@@ -27,6 +27,7 @@ jobs:
 
             console.log(`Workspaceing labels from template: <span class="math-inline">\{templateOwner\}/</span>{templateRepoName}`);
             console.log(`Syncing labels to target: <span class="math-inline">\{targetOwner\}/</span>{targetRepoName}`);
+        
 
             try {
               // Get labels from template repository (handles pagination)
