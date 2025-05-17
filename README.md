@@ -21,8 +21,8 @@ This assistant is an integral component of the research data infrastructure "His
 ## 3. Installing Instructions
 
 ### Python is necessary
-Follow the [Python installation guide](pythonInstalled.md) to make sure you have Python and pip installed on your device.  
-This assistant was developed using a specific Python version. If you encounter problems due to version conflicts, please refer to the [Python version guide](pythonVersionDowngrade.md).
+Follow the [Python installation guide](.github/pythonInstalled.md) to make sure you have Python and pip installed on your device.  
+This assistant was developed using a specific Python version. If you encounter problems due to version conflicts, please refer to the [Python version guide](.github/pythonVersionDowngrade.md).
 
 ### Quickstart on Windows:
 1. Download this project as a .zip file to your local device.  
@@ -46,11 +46,11 @@ This assistant was developed using a specific Python version. If you encounter p
    cd [folder name (probably the same like your rempo name)]
    ```
 
-4. [Create and activate a virtual environment](pythonVenv.md) in your project folder.
+4. [Create and activate a virtual environment](.github/pythonVenv.md) in your project folder.
 
-5. [Install all required Python packages](pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
+5. [Install all required Python packages](.github/pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
 
-6. [Set up your `.env` file](openAIEnv.md) with the necessary variables for OpenAI access.
+6. [Set up your `.env` file](.github/openAIEnv.md) with the necessary variables for OpenAI access.
 
 ## 4. Usage
 Open your terminal (for detailed instructions, see section 3.1).  
