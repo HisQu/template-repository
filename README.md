@@ -1,13 +1,24 @@
 # [Title of the Assistent]
 
+> **:information_source: Note:**  
+> This README.md is a template.  
+> All sections and texts written in square brackets (e.g., `[your text here]`) are placeholders.  
+> Please replace them with your project-specific information before publishing or sharing this repository.
+><br/>
+> You can follow these steps for completing these template:
+> - [ ] Replace the title (above this hint)
+> - [ ] geergerg
+> - [ ] write an quicksetup.bat that execute your application
+> - [ ] delete this hint
+> AND never stop to continue your documentation in [2. About this Assistent](#2-about-this-assistant)
+> <br/>
+ 
 ## Table of content
 1. [Dev-Hints](#1-dev-hints)<br/>
 2. [About this Assistant](#2-about-this-assistant)<br/>
 3. [Installing Instructions](#3-installing-instructions)<br/>
 4. [Usage](#4-usage)<br/>
 <br/>
-
-<div style="text-align: justify;">
 
 ## 1. Dev-Hints:
 - [Dev. to User: Write here some instructions, how bugs and advices can be communicated.]
@@ -16,13 +27,13 @@
 
 ## 2. About this Assistant:
 This assistant is an integral component of the research data infrastructure "Historische Quellen" (abbreviated as 'HisQu'). It serves as a collaborative initiative aimed at fostering the systematic organization, analysis, and accessibility of historical sources. For more detailed information about the goals, scope, and participating institutions, please visit the official website at https://hisqu.de/. <br/>
-[Write here your Assistent specific discribtion. ]
+[Write here your Assistent specific discribtion.]
 
 ## 3. Installing Instructions
 
 ### Python is necessary
-Follow the [Python installation guide](.github/pythonInstalled.md) to make sure you have Python and pip installed on your device.  
-This assistant was developed using a specific Python version. If you encounter problems due to version conflicts, please refer to the [Python version guide](.github/pythonVersionDowngrade.md).
+Follow the [Python installation guide](https://wiki.python.org/moin/BeginnersGuide/Download) to make sure you have Python and pip installed on your device.  
+This assistant was developed using a specific Python version. If you encounter problems due to version conflicts, please refer to the [Python version guide](https://devguide.python.org/versions/).
 
 ### Quickstart on Windows:
 1. Download this project as a .zip file to your local device.  
@@ -37,7 +48,7 @@ This assistant was developed using a specific Python version. If you encounter p
    - For Mac: Press [Command]+[Space], type "Terminal" in Spotlight, and open the terminal.
 2. Navigate the terminal to your save directory. Enter:
    ```
-   git clone [URL of the GitHub/ GitLab Repo].git
+   git clone [URL of the GitHub Repo].git
    ```
    **Alternatively:** If you don't have Git installed, download the project as a .zip file and extract all data into a folder.
 
@@ -46,17 +57,18 @@ This assistant was developed using a specific Python version. If you encounter p
    cd [folder name (probably the same like your rempo name)]
    ```
 
-4. [Create and activate a virtual environment](.github/pythonVenv.md) in your project folder.
+4. [Create and activate a virtual environment](pythonVenv.md) in your project folder.
 
-5. [Install all required Python packages](.github/pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
+5. [Install all required Python packages](pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
 
-6. [Set up your `.env` file](.github/openAIEnv.md) with the necessary variables for OpenAI access.
+6. [Set up your `.env` file](openAIEnv.md) with the necessary variables for OpenAI access.
 
 ## 4. Usage
 Open your terminal (for detailed instructions, see section 3.1).  
 To run the assistant, type the following command and press Enter:
 ```
-python scripts/NER_pipeline.py
+quicksetup.bat
 ```
 
-</div>
+
+
