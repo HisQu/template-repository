@@ -57,11 +57,11 @@ This assistant was developed using a specific Python version. If you encounter p
    cd [folder name (probably the same like your rempo name)]
    ```
 
-4. [Create and activate a virtual environment](pythonVenv.md) in your project folder.
+4. [Create and activate a virtual environment](https://github.com/HisQu/.github-private/blob/Datenflix007-patch-1/coding-practices/pythonVenv.md) in your project folder.
 
-5. [Install all required Python packages](pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
+5. [Install all required Python packages](https://github.com/HisQu/.github-private/blob/Datenflix007-patch-1/coding-practices/pythonRequiermentsText.md) using the `requirements.txt` file. This will also install all submodules recursively.
 
-6. [Set up your `.env` file](openAIEnv.md) with the necessary variables for OpenAI access.
+6. [Set up your `.env` file](https://github.com/HisQu/.github-private/blob/Datenflix007-patch-1/coding-practices/openAIEnv.md) with the necessary variables for OpenAI access.
 
 ## 4. Usage
 Open your terminal (for detailed instructions, see section 3.1).  
