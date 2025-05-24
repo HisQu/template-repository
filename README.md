@@ -7,7 +7,7 @@
 ><br/>
 > You can follow these steps for completing these template:
 > - [ ] Replace the title (above this hint)
-> - [ ] geergerg
+> - [ ] replace all URLS and repo titles 
 > - [ ] write an quicksetup.bat that execute your application
 > - [ ] delete this hint
 > AND never stop to continue your documentation in [2. About this Assistent](#2-about-this-assistant)
