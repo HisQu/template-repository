@@ -161,23 +161,63 @@ jobs:
             }
 
             async function addAllIssuesToHisQuProject(owner, repo) {
-              core.info(`Adding all existing issues from ${owner}/${repo} to HisQu project (using new Projects API)...`);
+              core.info(`Adding all existing issues from ${owner}/${repo} to HisQu project (using Projects V2 API)...`);
             
               const orgName = owner; // assuming org = owner
-              const projectNumber = 1; // HisQu/1 as integer
+              const projectTitle = "HisQu"; // Assuming the project is named "HisQu"
             
-              const query = `
-                query($org: String!, $projectNumber: Int!) {
+              // 1. Get the organization's Project V2 ID
+              const getProjectQuery = `
+                query($org: String!, $projectTitle: String!) {
                   organization(login: $org) {
-                    projectNext(number: $projectNumber) {
-                      id
-                      items(first: 100) {
+                    projectsV2(query: $projectTitle, first: 1) {
+                      nodes {
+                        id
+                        title
+                      }
+                    }
+                  }
+                }
+              `;
+            
+              let projectId;
+              try {
+                const result = await github.graphql(getProjectQuery, { org: orgName, projectTitle });
+                const projects = result.organization.projectsV2.nodes;
+                if (projects.length > 0) {
+                  projectId = projects[0].id;
+                  core.info(`Found HisQu project ID: ${projectId}`);
+                } else {
+                  core.warning(`HisQu project with title "${projectTitle}" not found in organization ${orgName}. Skipping adding issues.`);
+                  return;
+                }
+              } catch (error) {
+                core.warning(`Failed to fetch HisQu project (Projects V2): ${error.message}`);
+                return;
+              }
+            
+              // 2. Get existing items in the project to avoid duplicates
+              const getProjectItemsQuery = `
+                query($projectId: ID!) {
+                  node(id: $projectId) {
+                    ... on ProjectV2 {
+                      items(first: 100) { # Adjust 'first' as needed, or paginate
                         nodes {
                           id
                           content {
                             ... on Issue {
                               id
                               number
+                              repository {
+                                nameWithOwner
+                              }
+                            }
+                            ... on PullRequest {
+                              id
+                              number
+                              repository {
+                                nameWithOwner
+                              }
                             }
                           }
                         }
@@ -187,26 +227,17 @@ jobs:
                 }
               `;
             
-              let project;
+              let existingItems = [];
               try {
-                const result = await github.graphql(query, { org: orgName, projectNumber }, {
-                  headers: {
-                    accept: 'application/vnd.github.inertia-preview+json'
-                  }
-                });
-                project = result.organization.projectNext;
+                const projectItemsResult = await github.graphql(getProjectItemsQuery, { projectId });
+                if (projectItemsResult.node && projectItemsResult.node.items && projectItemsResult.node.items.nodes) {
+                  existingItems = projectItemsResult.node.items.nodes.filter(item => item.content); // Filter out items without content (e.g., drafts)
+                  core.info(`Found ${existingItems.length} existing items in HisQu project.`);
+                }
               } catch (error) {
-                core.warning(`Failed to fetch new HisQu project: ${error.message}`);
-                return;
+                core.warning(`Failed to fetch existing project items: ${error.message}`);
+                // Continue even if fetching existing items fails, so we can still try to add new ones
               }
-            
-              if (!project) {
-                core.warning(`HisQu project not found in org ${orgName}, skipping adding issues`);
-                return;
-              }
-            
-              const existingItems = project.items.nodes;
-              core.info(`Found ${existingItems.length} existing items in HisQu project`);
             
               let issues = [];
               try {
@@ -224,15 +255,21 @@ jobs:
               core.info(`Found ${issues.length} issues in ${owner}/${repo}`);
             
               for (const issue of issues) {
-                const alreadyAdded = existingItems.some(item => item.content && item.content.number === issue.number);
+                const alreadyAdded = existingItems.some(item =>
+                  item.content &&
+                  item.content.number === issue.number &&
+                  item.content.repository &&
+                  item.content.repository.nameWithOwner === `${owner}/${repo}`
+                );
+            
                 if (alreadyAdded) {
-                  core.info(`Issue #${issue.number} already in HisQu project, skipping`);
+                  core.info(`Issue #${issue.number} from ${owner}/${repo} already in HisQu project, skipping`);
                   continue;
                 }
             
-                const mutation = `
+                const addIssueMutation = `
                   mutation($projectId: ID!, $contentId: ID!) {
-                    addProjectNextItem(input: { projectId: $projectId, contentId: $contentId }) {
+                    addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
                       item {
                         id
                       }
@@ -241,14 +278,10 @@ jobs:
                 `;
             
                 try {
-                  await github.graphql(mutation, { projectId: project.id, contentId: issue.node_id }, {
-                    headers: {
-                      accept: 'application/vnd.github.inertia-preview+json'
-                    }
-                  });
-                  core.info(`Added issue #${issue.number} to HisQu project`);
+                  await github.graphql(addIssueMutation, { projectId: projectId, contentId: issue.node_id });
+                  core.info(`Added issue #${issue.number} from ${owner}/${repo} to HisQu project`);
                 } catch (error) {
-                  core.warning(`Failed to add issue #${issue.number}: ${error.message}`);
+                  core.warning(`Failed to add issue #${issue.number} from ${owner}/${repo} to project: ${error.message}`);
                 }
               }
             }
