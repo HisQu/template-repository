@@ -16,10 +16,8 @@ jobs:
       contents: read # Needed for actions/checkout@v4 (optional if not checking out code)
       issues: write # Needed to read issue details (for node_id)
       pull-requests: write # Needed to read PR details (for node_id)
-      organization_projects: write # Crucial for updating project items
-      # Or just 'projects: write' if using classic token with broader permissions
-      # Or if using a fine-grained token, ensure 'Organization projects: Read and write'
-      # and 'Repository projects: Read and write' are enabled if applicable.
+      statuses: write # Crucial for updating project statuses 
+      repository-projects: write
 
     steps:
       - name: Get Issue/PR Node ID and Project ID
