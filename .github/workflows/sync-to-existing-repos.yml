@@ -53,9 +53,9 @@ jobs:
 
             // --- Configuration ---
             const issueTemplateSourceDir = path.join(templateDir, '.github', 'ISSUE_TEMPLATE');
-            const issueTemplateTargetDir = '.github/ISSUE_TEMPLATE'; // Target path in remote repo
+            const issueTemplateTargetDir = '.github/ISSUE_TEMPLATE';
             const workflowSourceDir = path.join(templateDir, '.github', 'workflows');
-            const workflowTargetDir = '.github/workflows';
+            const workflowTargetDir = '.github/workflows';
 
             // --- Helper Functions ---
             async function getLabels(owner, repo) {
