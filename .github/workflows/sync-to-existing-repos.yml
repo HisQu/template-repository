@@ -110,8 +110,10 @@ jobs:
 
             async function syncFile(targetOwner, targetRepo, sourceFilePath, targetDir) {
               const fileName = path.basename(sourceFilePath);
-              const targetPath = `<span class="math-inline">\{targetDir\}/</span>{fileName}`; // Use forward slashes for API path
-              core.info(`Syncing issue template ${fileName} to ${targetOwner}/${targetRepo} at ${targetPath}`);
+              const targetPath = `${targetDir}/${fileName}`; // Use forward slashes for API path
+              
+              // Log-Ausgabe mit Backticks (`) für korrekte Variableneinbettung
+              core.info(`Syncing file ${fileName} to ${targetOwner}/${targetRepo} at ${targetPath}`);
 
               let targetFileSha = null;
               try {
@@ -122,44 +124,39 @@ jobs:
                   path: targetPath,
                 });
                 targetFileSha = existingFile.sha;
-                core.info(`Found existing issue template ${fileName} with SHA: ${targetFileSha}`);
+                core.info(`Found existing file ${fileName} with SHA: ${targetFileSha}`);
               } catch (error) {
                 if (error.status === 404) {
-                   core.info(`Issue template ${fileName} does not exist in target.`);
+                  core.info(`File ${fileName} does not exist in target.`);
                 } else {
-                  // Log other errors (like permission errors)
                   core.error(`Error checking for existing file ${targetPath} in ${targetOwner}/${targetRepo}: ${error.status} ${error.message}`);
-                  return false; // Indicate failure
+                  return false;
                 }
               }
 
               if (targetFileSha && !forceUpdateIssueTemplates) {
                 core.info(`Skipping update for existing file ${fileName} as force_update is false.`);
-                return true; // Indicate success (no action needed)
+                return true;
               }
 
               try {
-                core.info(`Reading local template file: ${templateFilePath}`);
-                const fileContent = fs.readFileSync(templateFilePath, 'utf8');
+                const fileContent = fs.readFileSync(sourceFilePath, 'utf8');
                 const contentBase64 = Buffer.from(fileContent).toString('base64');
-                core.info(`Read ${fileContent.length} bytes, encoded to ${contentBase64.length} Base64 characters.`);
 
-                core.info(`Attempting to create/update file ${targetPath} (SHA: ${targetFileSha || 'N/A'})...`);
                 await github.rest.repos.createOrUpdateFileContents({
                   owner: targetOwner,
                   repo: targetRepo,
                   path: targetPath,
-                  message: `Sync issue template ${fileName} from template repo`,
+                  message: `Sync file ${fileName} from template repo`,
                   content: contentBase64,
-                  sha: targetFileSha, // Provide SHA if updating (null/undefined if creating)
+                  sha: targetFileSha, 
                 });
                 core.info(`Successfully created/updated ${fileName} in ${targetOwner}/${targetRepo}`);
-                return true; // Indicate success
+                return true;
               } catch (error) {
-                core.error(`Error creating/updating issue template ${fileName} in ${targetOwner}/${targetRepo}: ${error.status} ${error.message}`);
-                // Log the full error object for more details if needed
-                // console.error(error);
-                return false; // Indicate failure
+                // Log-Ausgabe mit Backticks (`) für korrekte Variableneinbettung
+                core.error(`Error creating/updating file ${fileName} in ${targetOwner}/${targetRepo}: ${error.message}`);
+                return false;
               }
             }
 
