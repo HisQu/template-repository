@@ -54,6 +54,8 @@ jobs:
             // --- Configuration ---
             const issueTemplateSourceDir = path.join(templateDir, '.github', 'ISSUE_TEMPLATE');
             const issueTemplateTargetDir = '.github/ISSUE_TEMPLATE'; // Target path in remote repo
+            const workflowSourceDir = path.join(templateDir, '.github', 'workflows');
+            const workflowTargetDir = '.github/workflows';
 
             // --- Helper Functions ---
             async function getLabels(owner, repo) {
@@ -106,9 +108,9 @@ jobs:
                }
             }
 
-            async function syncIssueTemplate(targetOwner, targetRepo, templateFilePath) {
-              const fileName = path.basename(templateFilePath);
-              const targetPath = `${issueTemplateTargetDir}/${fileName}`; // Use forward slashes for API path
+            async function syncFile(targetOwner, targetRepo, sourceFilePath, targetDir) {
+              const fileName = path.basename(sourceFilePath);
+              const targetPath = `<span class="math-inline">\{targetDir\}/</span>{fileName}`; // Use forward slashes for API path
               core.info(`Syncing issue template ${fileName} to ${targetOwner}/${targetRepo} at ${targetPath}`);
 
               let targetFileSha = null;
@@ -195,6 +197,24 @@ jobs:
             } catch (error) {
                core.error(`Error reading issue template directory ${issueTemplateSourceDir}: ${error.message}. Skipping issue template sync.`);
             }
+            
+            core.info('Defining specific workflow files to sync...');
+            // Liste der Workflows, die Sie gezielt synchronisieren möchten
+            const workflowsToSyncByName = [
+                'add-pr-to-project.yml',
+                'toc.yml'
+            ];
+            
+            const workflowFiles = workflowsToSyncByName.map(fileName => path.join(workflowSourceDir, fileName));
+            
+            // Prüfen, ob die definierten Dateien auch existieren
+            workflowFiles.forEach(filePath => {
+                if (!fs.existsSync(filePath)) {
+                    core.warning(`Defined workflow file to sync does not exist: ${filePath}`);
+                }
+            });
+            
+            core.info(`Found ${workflowFiles.length} specific workflow files to sync: ${workflowsToSyncByName.join(', ')}`);
 
             // 3. Iterate through target repositories and sync
             let overallSuccess = true;
@@ -255,7 +275,7 @@ jobs:
                 core.info(`Starting issue template sync for ${targetOwner}/${targetRepoName}...`);
                 let templatesSyncedCount = 0;
                  for (const templateFile of issueTemplateFiles) {
-                   if (await syncIssueTemplate(targetOwner, targetRepoName, templateFile)) {
+                   if (await syncFile(targetOwner, targetRepoName, templateFile, issueTemplateTargetDir)) {
                        templatesSyncedCount++;
                    } else {
                        overallSuccess = false; // Mark as failed if any template sync fails
@@ -269,6 +289,27 @@ jobs:
                  }
               } else {
                  core.info(`Skipping issue template sync for ${targetOwner}/${targetRepoName} as no template files were found initially.`);
+              }
+
+              
+              // == Sync Workflows ==
+              if (workflowFiles.length > 0) {
+                core.info(`Starting workflow sync for ${targetOwner}/${targetRepoName}...`);
+                let workflowsSyncedCount = 0;
+                for (const workflowFile of workflowFiles) {
+                  if (await syncFile(targetOwner, targetRepoName, workflowFile, workflowTargetDir)) {
+                    workflowsSyncedCount++;
+                  } else {
+                    overallSuccess = false; 
+                  }
+                }
+                if (workflowsSyncedCount === workflowFiles.length) {
+                  core.info(`Finished workflow sync for ${targetOwner}/${targetRepoName}. Processed all ${workflowsSyncedCount} workflow files successfully.`);
+                } else {
+                  core.warning(`Finished workflow sync for ${targetOwner}/${targetRepoName}. Processed ${workflowsSyncedCount} out of ${workflowFiles.length} workflow files.`);
+                }
+              } else {
+                core.info(`Skipping workflow sync for ${targetOwner}/${targetRepoName} as no workflow files were found initially.`);
               }
             } // End loop through target repos
 
