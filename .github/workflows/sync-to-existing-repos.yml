@@ -166,7 +166,6 @@ jobs:
               const orgName = owner; // assuming org = owner
               const projectNumber = 1; // HisQu/1 as integer
             
-              // GraphQL query to get the project and existing items
               const query = `
                 query($org: String!, $projectNumber: Int!) {
                   organization(login: $org) {
@@ -190,7 +189,11 @@ jobs:
             
               let project;
               try {
-                const result = await github.graphql(query, { org: orgName, projectNumber });
+                const result = await github.graphql(query, { org: orgName, projectNumber }, {
+                  headers: {
+                    accept: 'application/vnd.github.inertia-preview+json'
+                  }
+                });
                 project = result.organization.projectNext;
               } catch (error) {
                 core.warning(`Failed to fetch new HisQu project: ${error.message}`);
@@ -205,7 +208,6 @@ jobs:
               const existingItems = project.items.nodes;
               core.info(`Found ${existingItems.length} existing items in HisQu project`);
             
-              // Fetch all issues (open + closed)
               let issues = [];
               try {
                 issues = await github.paginate(github.rest.issues.listForRepo, {
@@ -222,14 +224,12 @@ jobs:
               core.info(`Found ${issues.length} issues in ${owner}/${repo}`);
             
               for (const issue of issues) {
-                // Check if issue is already added as a project item
                 const alreadyAdded = existingItems.some(item => item.content && item.content.number === issue.number);
                 if (alreadyAdded) {
                   core.info(`Issue #${issue.number} already in HisQu project, skipping`);
                   continue;
                 }
             
-                // Add issue to the project (new API mutation)
                 const mutation = `
                   mutation($projectId: ID!, $contentId: ID!) {
                     addProjectNextItem(input: { projectId: $projectId, contentId: $contentId }) {
@@ -241,7 +241,11 @@ jobs:
                 `;
             
                 try {
-                  await github.graphql(mutation, { projectId: project.id, contentId: issue.node_id });
+                  await github.graphql(mutation, { projectId: project.id, contentId: issue.node_id }, {
+                    headers: {
+                      accept: 'application/vnd.github.inertia-preview+json'
+                    }
+                  });
                   core.info(`Added issue #${issue.number} to HisQu project`);
                 } catch (error) {
                   core.warning(`Failed to add issue #${issue.number}: ${error.message}`);
