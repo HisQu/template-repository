@@ -161,57 +161,87 @@ jobs:
             }
 
             async function addAllIssuesToHisQuProject(owner, repo) {
-              core.info(`Adding all existing issues from ${owner}/${repo} to HisQu project...`);
+              core.info(`Adding all existing issues from ${owner}/${repo} to HisQu project (using new Projects API)...`);
             
               const orgName = owner; // assuming org = owner
-              const projectNumber = '1'; // HisQu/1
+              const projectNumber = 1; // HisQu/1 as integer
             
-              // Get the project
-              const { data: projects } = await github.rest.projects.listForOrg({ org: orgName, state: 'open' });
-              const project = projects.find(p => p.number.toString() === projectNumber);
+              // GraphQL query to get the project and existing items
+              const query = `
+                query($org: String!, $projectNumber: Int!) {
+                  organization(login: $org) {
+                    projectNext(number: $projectNumber) {
+                      id
+                      items(first: 100) {
+                        nodes {
+                          id
+                          content {
+                            ... on Issue {
+                              id
+                              number
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+            
+              let project;
+              try {
+                const result = await github.graphql(query, { org: orgName, projectNumber });
+                project = result.organization.projectNext;
+              } catch (error) {
+                core.warning(`Failed to fetch new HisQu project: ${error.message}`);
+                return;
+              }
+            
               if (!project) {
                 core.warning(`HisQu project not found in org ${orgName}, skipping adding issues`);
                 return;
               }
             
-              // Get first column of the project
-              const { data: columns } = await github.rest.projects.listColumns({ project_id: project.id });
-              if (columns.length === 0) {
-                core.warning(`No columns found in HisQu project, skipping adding issues`);
-                return;
-              }
-              const firstColumn = columns[0];
-            
-              // Get cards in the first (and only) column
-              const cards = await github.paginate(github.rest.projects.listCards, {
-                column_id: firstColumn.id,
-                per_page: 100,
-              });
+              const existingItems = project.items.nodes;
+              core.info(`Found ${existingItems.length} existing items in HisQu project`);
             
               // Fetch all issues (open + closed)
-              const issues = await github.paginate(github.rest.issues.listForRepo, {
-                owner,
-                repo,
-                state: 'all',
-                per_page: 100,
-              });
+              let issues = [];
+              try {
+                issues = await github.paginate(github.rest.issues.listForRepo, {
+                  owner,
+                  repo,
+                  state: 'all',
+                  per_page: 100,
+                });
+              } catch (error) {
+                core.warning(`Failed to fetch issues for ${owner}/${repo}: ${error.message}`);
+                return;
+              }
             
               core.info(`Found ${issues.length} issues in ${owner}/${repo}`);
             
               for (const issue of issues) {
-                // Check if issue is already added as a card in first column
-                const alreadyAdded = cards.some(card => card.content_url?.endsWith(`/issues/${issue.number}`));
+                // Check if issue is already added as a project item
+                const alreadyAdded = existingItems.some(item => item.content && item.content.number === issue.number);
                 if (alreadyAdded) {
                   core.info(`Issue #${issue.number} already in HisQu project, skipping`);
                   continue;
                 }
             
+                // Add issue to the project (new API mutation)
+                const mutation = `
+                  mutation($projectId: ID!, $contentId: ID!) {
+                    addProjectNextItem(input: { projectId: $projectId, contentId: $contentId }) {
+                      item {
+                        id
+                      }
+                    }
+                  }
+                `;
+            
                 try {
-                  await github.rest.projects.createCard({
-                    column_id: firstColumn.id,
-                    content_id: issue.node_id,
-                    content_type: 'Issue',
-                  });
+                  await github.graphql(mutation, { projectId: project.id, contentId: issue.node_id });
                   core.info(`Added issue #${issue.number} to HisQu project`);
                 } catch (error) {
                   core.warning(`Failed to add issue #${issue.number}: ${error.message}`);
