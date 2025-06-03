@@ -160,6 +160,66 @@ jobs:
               }
             }
 
+            async function addAllIssuesToHisQuProject(owner, repo) {
+              core.info(`Adding all existing issues from ${owner}/${repo} to HisQu project...`);
+            
+              const orgName = owner; // assuming org = owner
+              const projectNumber = '1'; // HisQu/1
+            
+              // Get the project
+              const { data: projects } = await github.rest.projects.listForOrg({ org: orgName, state: 'open' });
+              const project = projects.find(p => p.number.toString() === projectNumber);
+              if (!project) {
+                core.warning(`HisQu project not found in org ${orgName}, skipping adding issues`);
+                return;
+              }
+            
+              // Get first column of the project
+              const { data: columns } = await github.rest.projects.listColumns({ project_id: project.id });
+              if (columns.length === 0) {
+                core.warning(`No columns found in HisQu project, skipping adding issues`);
+                return;
+              }
+              const firstColumn = columns[0];
+            
+              // Get cards in the first (and only) column
+              const cards = await github.paginate(github.rest.projects.listCards, {
+                column_id: firstColumn.id,
+                per_page: 100,
+              });
+            
+              // Fetch all issues (open + closed)
+              const issues = await github.paginate(github.rest.issues.listForRepo, {
+                owner,
+                repo,
+                state: 'all',
+                per_page: 100,
+              });
+            
+              core.info(`Found ${issues.length} issues in ${owner}/${repo}`);
+            
+              for (const issue of issues) {
+                // Check if issue is already added as a card in first column
+                const alreadyAdded = cards.some(card => card.content_url?.endsWith(`/issues/${issue.number}`));
+                if (alreadyAdded) {
+                  core.info(`Issue #${issue.number} already in HisQu project, skipping`);
+                  continue;
+                }
+            
+                try {
+                  await github.rest.projects.createCard({
+                    column_id: firstColumn.id,
+                    content_id: issue.node_id,
+                    content_type: 'Issue',
+                  });
+                  core.info(`Added issue #${issue.number} to HisQu project`);
+                } catch (error) {
+                  core.warning(`Failed to add issue #${issue.number}: ${error.message}`);
+                }
+              }
+            }
+
+
             // --- Main Logic ---
             const [templateOwner, templateRepoName] = templateRepoInput.split('/');
             const targetRepoList = targetReposInput.split(',').map(repo => repo.trim());
@@ -199,7 +259,8 @@ jobs:
             // Liste der Workflows, die Sie gezielt synchronisieren möchten
             const workflowsToSyncByName = [
                 'add-pr-to-project.yml',
-                'toc.yml'
+                'toc.yml',
+                'add-issue-to-hisqu-project.yml'
             ];
             
             const workflowFiles = workflowsToSyncByName.map(fileName => path.join(workflowSourceDir, fileName));
@@ -308,6 +369,10 @@ jobs:
               } else {
                 core.info(`Skipping workflow sync for ${targetOwner}/${targetRepoName} as no workflow files were found initially.`);
               }
+
+              core.info(`Syncing all existing issues to HisQu project for ${targetOwner}/${targetRepoName}...`);
+              await addAllIssuesToHisQuProject(targetOwner, targetRepoName);
+
             } // End loop through target repos
 
             core.info('\n--- Sync Process Complete ---');
