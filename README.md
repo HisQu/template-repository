@@ -17,7 +17,19 @@
 > <br/>
  
 ## Table of content
+
 <!-- toc -->
+
+- [Dev-Hints:](#dev-hints)
+- [About [this repository]:](#about-this-repository)
+- [Usage](#usage)
+- [Installing Instructions](#installing-instructions)
+  * [Prerequesites](#prerequesites)
+  * [Step by Step:](#step-by-step)
+- [Development](#development)
+
+<!-- tocstop -->
+
 <!-- /toc -->
 <br/>
 
