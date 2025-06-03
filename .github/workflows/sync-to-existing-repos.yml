@@ -193,14 +193,14 @@ jobs:
                 return;
               }
             
-              // 1. Get existing items in the project to avoid duplicates (now including PR content check)
+              // 1. Get existing items in the project to avoid duplicates
               let existingItems = [];
               try {
                 const projectItemsResult = await github.graphql(`
                   query($projectId: ID!) {
                     node(id: $projectId) {
                       ... on ProjectV2 {
-                        items(first: 100) { // Consider pagination if you expect more than 100 project items
+                        items(first: 100) { # Adjust 'first' as needed, or paginate
                           nodes {
                             id
                             content {
@@ -211,7 +211,7 @@ jobs:
                                   nameWithOwner
                                 }
                               }
-                              ... on PullRequest { // Added PullRequest to content check
+                              ... on PullRequest {
                                 id
                                 number
                                 repository {
@@ -223,15 +223,17 @@ jobs:
                         }
                       }
                     }
-                  }`, { projectId });
+                  }
+                `, { projectId }); // <-- Ensure this is correctly inside the github.graphql call
             
                 if (projectItemsResult.node && projectItemsResult.node.items && projectItemsResult.node.items.nodes) {
                   existingItems = projectItemsResult.node.items.nodes.filter(item => item.content);
                   core.info(`Found ${existingItems.length} existing items in HisQu project.`);
                 }
               } catch (error) {
-                core.warning(`Failed to fetch existing project items (issues/PRs): ${error.message}. Ensure PAT has sufficient repository-level read permissions for all repos linked to the project.`);
-                // Continue even if fetching existing items fails, as the add mutation will handle duplicates.
+                // Modify the warning message to be more specific about the likely cause.
+                core.warning(`Failed to fetch existing project items (issues/PRs) for duplicate check: ${error.message}. This indicates a GraphQL query syntax issue or continued PAT permission problems accessing content data in specific repositories. The script will continue and rely on the Project API's duplicate check.`);
+                // We still continue because the addProjectV2ItemById mutation will fail if it's a true duplicate.
               }
             
             
