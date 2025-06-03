@@ -224,7 +224,7 @@ jobs:
                       }
                     }
                   }
-                `, { projectId }); // <-- Ensure this is correctly inside the github.graphql call
+                `, { projectId });
             
                 if (projectItemsResult.node && projectItemsResult.node.items && projectItemsResult.node.items.nodes) {
                   existingItems = projectItemsResult.node.items.nodes.filter(item => item.content);
