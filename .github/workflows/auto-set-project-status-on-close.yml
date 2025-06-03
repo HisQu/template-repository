@@ -68,43 +68,50 @@ jobs:
           echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_OUTPUT
           echo "Found Project ID: $PROJECT_ID"
 
-      # --- NEW STEP TO GET THE PROJECT ITEM ID ---
+      # --- STEP TO GET THE PROJECT ITEM ID ---
       - name: Get Project V2 Item ID for the Issue/PR
         id: get_project_item_id
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_SYNC_PAT }}
           PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}
           ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }}
+          REPO_NAME: ${{ steps.get_initial_ids.outputs.REPO_NAME }}
+          REPO_OWNER: ${{ steps.get_initial_ids.outputs.REPO_OWNER }}
         run: |
-          PROJECT_ITEM_ID_RESPONSE=$(curl -s -L \
+          # Query the project for its items (up to 100 or 1000, for practical purposes)
+          # We'll then filter locally using jq
+          PROJECT_ITEMS_RESPONSE=$(curl -s -L \
             -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             https://api.github.com/graphql \
             -d '{
-              "query": "query($projectId: ID!, $contentId: ID!) { node(id: $projectId) { ... on ProjectV2 { items(first: 100, query: { type: ISSUE, id: $contentId }) { nodes { id content { ... on Issue { id } ... on PullRequest { id } } } } } } }",
+              "query": "query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { items(first: 100) { # Adjusted to first: 100 for broader fetch
+                nodes {
+                  id
+                  content {
+                    ... on Issue { id number repository { name nameWithOwner } }
+                    ... on PullRequest { id number repository { name nameWithOwner } }
+                  }
+                }
+              } } } }",
               "variables": {
-                "projectId": "'"$PROJECT_ID"'",
-                "contentId": "'"$ITEM_CONTENT_ID"'"
+                "projectId": "'"$PROJECT_ID"'"
               }
             }')
 
-          # Note: The 'query' argument in ProjectV2.items is limited.
-          # A more robust way (if 'query' is not enough) is to iterate through all items
-          # (potentially paginating) and find the one whose 'content.id' matches ITEM_CONTENT_ID.
-          # For now, let's assume 'query: { id: $contentId }' works for direct lookup.
-          # If it fails, we'll need to fetch all and filter.
-
-          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEM_ID_RESPONSE" | jq -r '.data.node.items.nodes[0].id // empty')
+          # Use jq to find the ProjectV2Item ID for our specific issue/PR
+          # We check both the content ID and the repository name to be precise.
+          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEMS_RESPONSE" | jq -r --arg ITEM_CONTENT_ID "$ITEM_CONTENT_ID" --arg REPO_NAME "$REPO_NAME" --arg REPO_OWNER "$REPO_OWNER" \
+            '.data.node.items.nodes[] | select(.content != null and .content.id == $ITEM_CONTENT_ID and .content.repository.nameWithOwner == ($REPO_OWNER + "/" + $REPO_NAME)) | .id // empty')
 
           if [ -z "$PROJECT_ITEM_ID" ]; then
-            echo "Warning: Could not find ProjectV2Item ID for content ID '$ITEM_CONTENT_ID' in project '$PROJECT_ID'. The issue/PR might not be in the project."
-            exit 0 # Exit successfully, as the item isn't in the project to update
+            echo "Warning: Could not find ProjectV2Item ID for content ID '$ITEM_CONTENT_ID' from repo '$REPO_OWNER/$REPO_NAME' in project '$PROJECT_ID'. The issue/PR might not be in the project, or the lookup query failed."
+            exit 0 # Gracefully exit if item not found in project
           fi
           echo "PROJECT_ITEM_ID=$PROJECT_ITEM_ID" >> $GITHUB_OUTPUT
           echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID"
-
 
       - name: Get Project Status Field ID and Option ID for "Done"
         id: get_field_ids
