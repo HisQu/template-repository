@@ -75,7 +75,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ORG_SYNC_PAT }}
           PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}
           ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }}
-          # We need REPO_OWNER and REPO_NAME for precise matching if issues can have same numbers in different repos
           REPO_OWNER: ${{ steps.get_initial_ids.outputs.REPO_OWNER }}
           REPO_NAME: ${{ steps.get_initial_ids.outputs.REPO_NAME }}
         run: |
@@ -83,55 +82,45 @@ jobs:
           echo "Target repository: $REPO_OWNER/$REPO_NAME"
 
           PROJECT_ITEM_ID=""
-          HAS_NEXT_PAGE="true" # Start by assuming there's a page
-          CURSOR="null"        # GraphQL null, not the string "null" for the first request's variable
+          HAS_NEXT_PAGE="true" 
+          CURSOR="null"        # Shell variable: string "null" for initial state, or actual cursor string
           REPO_FULL_NAME="$REPO_OWNER/$REPO_NAME"
-
           LOOP_COUNT=0
           # Max 15 pages for up to 1500 items (100 items/page). Adjust if your project can be larger.
           MAX_LOOPS=15 
 
-          while [ -z "$PROJECT_ITEM_ID" ] && [ "$HAS_NEXT_PAGE" == "true" ] && [ "$LOOP_COUNT" -lt "$MAX_LOOPS" ]; do
-            LOOP_COUNT=$((LOOP_COUNT + 1))
-            echo "Fetching project items page: $LOOP_COUNT, Current cursor: $CURSOR"
-
-            # Prepare cursor string for insertion into query.
-            # If CURSOR is the literal string "null" (meaning first page), CURSOR_GQL_ARG should be empty.
-            # Otherwise, it should be "after: \"$CURSOR\"".
-            if [ "$CURSOR" == "null" ]; then
-              CURSOR_GQL_ARG=""
-            else
-              CURSOR_GQL_ARG="after: \"$CURSOR\""
-            fi
-
-            GRAPHQL_QUERY_TEMPLATE='
-            query($projectId: ID!, $pageCursor: String) { # Use $pageCursor for the 'after' argument
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  title
-                  items(first: 100, %CURSOR_PLACEHOLDER% orderBy: {field: POSITION, direction: ASC}) {
-                    pageInfo {
-                      hasNextPage
-                      endCursor
-                    }
-                    nodes {
-                      id # ProjectV2Item ID
-                      content {
-                        __typename # Important for knowing the type of content
-                        ... on Issue { id repository { fullName:nameWithOwner } } # Alias to fullName for easier access
-                        ... on PullRequest { id repository { fullName:nameWithOwner } }
-                        # Add ... on DraftIssue { title } if you use draft issues and need to match them
-                      }
+          # Define the GraphQL query string ONCE.
+          # It directly uses the $pageCursor variable.
+          GRAPHQL_QUERY='
+          query($projectId: ID!, $pageCursor: String) {
+            node(id: $projectId) {
+              ... on ProjectV2 {
+                title
+                items(first: 100, after: $pageCursor, orderBy: {field: POSITION, direction: ASC}) {
+                  pageInfo {
+                    hasNextPage
+                    endCursor
+                  }
+                  nodes {
+                    id 
+                    content {
+                      __typename 
+                      ... on Issue { id repository { fullName:nameWithOwner } } 
+                      ... on PullRequest { id repository { fullName:nameWithOwner } }
                     }
                   }
                 }
               }
-            }'
-            # Replace placeholder with the actual cursor argument string
-            GRAPHQL_QUERY="${GRAPHQL_QUERY_TEMPLATE//%CURSOR_PLACEHOLDER%/$CURSOR_GQL_ARG}"
+            }
+          }' # End of GRAPHQL_QUERY definition
+
+          while [ -z "$PROJECT_ITEM_ID" ] && [ "$HAS_NEXT_PAGE" == "true" ] && [ "$LOOP_COUNT" -lt "$MAX_LOOPS" ]; do
+            LOOP_COUNT=$((LOOP_COUNT + 1))
+            echo "Fetching project items page: $LOOP_COUNT, Current shell CURSOR variable for next request: $CURSOR"
             
-            # Variables for the GraphQL query.
-            # The $pageCursor variable in GraphQL should be 'String', which can accept 'null'.
+            # Prepare variables for the GraphQL query.
+            # The 'pageCursor' field in JSON will be 'null' (JSON null) if shell CURSOR is "null",
+            # or a JSON string containing the cursor value.
             VARIABLES_JSON=$(jq -n \
               --arg projectId "$PROJECT_ID" \
               --argjson pageCursor "$([ "$CURSOR" == "null" ] && echo null || echo "\"$CURSOR\"")" \
@@ -157,24 +146,23 @@ jobs:
             if echo "$RESPONSE" | jq -e '.errors' > /dev/null; then
               echo "Error: GraphQL query failed on page $LOOP_COUNT:"
               echo "$RESPONSE" | jq '.errors'
-              PROJECT_ITEM_ID="ERROR_GRAPHQL_PAGINATION" # Mark error
-              HAS_NEXT_PAGE="false" # Stop loop
-              continue
+              PROJECT_ITEM_ID="ERROR_GRAPHQL_PAGINATION" 
+              HAS_NEXT_PAGE="false" # Stop loop on error
+              continue # Go to while condition check
             fi
 
-            # Extract pageInfo. Ensure paths are correct and handle nulls.
+            # Extract pageInfo and nodes.
             CURRENT_PAGE_HAS_NEXT=$(echo "$RESPONSE" | jq -r '.data.node.items.pageInfo.hasNextPage // "false"')
             NEW_CURSOR_RAW=$(echo "$RESPONSE" | jq -r '.data.node.items.pageInfo.endCursor // "null"')
 
             HAS_NEXT_PAGE="$CURRENT_PAGE_HAS_NEXT"
+            # Update shell CURSOR variable for the *next* iteration
             if [ "$NEW_CURSOR_RAW" != "null" ] && [ -n "$NEW_CURSOR_RAW" ]; then
               CURSOR="$NEW_CURSOR_RAW"
             else
-              CURSOR="null" # Set to string "null" if endCursor is actually null or empty
+              CURSOR="null" # Set to string "null" if endCursor is actually JSON null or empty
             fi
             
-            # Iterate over nodes in the current page using jq to find the match
-            # This is more efficient than a shell loop over many items.
             FOUND_ON_PAGE=$(echo "$RESPONSE" | jq -r \
               --arg targetContentId "$ITEM_CONTENT_ID" \
               --arg targetRepoFullName "$REPO_FULL_NAME" \
@@ -186,34 +174,33 @@ jobs:
                    (.content.__typename == "Issue" or .content.__typename == "PullRequest") and 
                    .content.repository.fullName == $targetRepoFullName
                  )
-                 # Example for DraftIssue if you wanted to match by title:
-                 # or (.content.__typename == "DraftIssue" and .content.title == "Your Draft Title")
                ) | .id // empty')
 
             if [ -n "$FOUND_ON_PAGE" ]; then
               PROJECT_ITEM_ID="$FOUND_ON_PAGE"
-              PROJECT_TITLE_FROM_RESPONSE=$(echo "$RESPONSE" | jq -r '.data.node.title // "Project (title not in this response page)"')
+              PROJECT_TITLE_FROM_RESPONSE=$(echo "$RESPONSE" | jq -r '.data.node.title // "Project (title not from this page)"')
               echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID on page $LOOP_COUNT for Content ID $ITEM_CONTENT_ID in Project '$PROJECT_TITLE_FROM_RESPONSE'"
-              # No need to change HAS_NEXT_PAGE, outer loop condition -z "$PROJECT_ITEM_ID" will handle it
+              # Loop will terminate due to -z "$PROJECT_ITEM_ID" being false
             elif [ "$HAS_NEXT_PAGE" == "false" ]; then
               echo "Item not found on this page, and no more pages. (Page $LOOP_COUNT)"
             else
-              echo "Item not found on page $LOOP_COUNT, proceeding to next page."
+              echo "Item not found on page $LOOP_COUNT, proceeding to next page (if any)."
             fi
           done # End of while loop
 
+          # --- Post-loop handling ---
           if [ "$PROJECT_ITEM_ID" == "ERROR_GRAPHQL_PAGINATION" ]; then
             echo "Critical Error: GraphQL query failed during pagination. Cannot determine ProjectV2Item ID."
             exit 1
-          elif [ -z "$PROJECT_ITEM_ID" ]; then
-            if [ "$LOOP_COUNT" -ge "$MAX_LOOPS" ]; then
-              echo "Warning: Reached max loop iteration ($MAX_LOOPS pages, approx. $($MAX_LOOPS*100) items) for finding item."
+          elif [ -z "$PROJECT_ITEM_ID" ]; then # If ID is still empty after loop
+            if [ "$LOOP_COUNT" -ge "$MAX_LOOPS" ] && [ "$HAS_NEXT_PAGE" == "true" ]; then # Check if max loops was hit WHILE there were still pages
+              echo "Warning: Reached max loop iteration ($MAX_LOOPS pages, approx. $($MAX_LOOPS*100) items) while trying to find item, and there might have been more pages."
             else
-              echo "Warning: Scanned all available pages of the project."
+              echo "Warning: Scanned all available pages (up to $LOOP_COUNT pages) of the project."
             fi
             echo "Item with Content ID '$ITEM_CONTENT_ID' from repo '$REPO_FULL_NAME' was NOT found in the project."
             echo "Please ensure the issue/PR is correctly added to the project."
-            exit 0 # Gracefully exit if item not found after checking all relevant pages
+            exit 0 # Gracefully exit if item not found after checking relevant pages
           fi
 
           echo "PROJECT_ITEM_ID=$PROJECT_ITEM_ID" >> $GITHUB_OUTPUT
