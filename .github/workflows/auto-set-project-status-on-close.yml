@@ -73,57 +73,87 @@ jobs:
         id: get_project_item_id
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_SYNC_PAT }}
-          PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}
-          ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }}
-          REPO_NAME: ${{ steps.get_initial_ids.outputs.REPO_NAME }}
-          REPO_OWNER: ${{ steps.get_initial_ids.outputs.REPO_OWNER }}
+          PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}    # Target Project's Node ID
+          ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }} # Issue/PR Node ID
         run: |
-          echo "Attempting to find item with content ID: $ITEM_CONTENT_ID in project: $PROJECT_ID for repo: $REPO_OWNER/$REPO_NAME"
+          echo "Attempting to find project item for content (Issue/PR) ID: $ITEM_CONTENT_ID within target project ID: $PROJECT_ID"
 
-          PROJECT_ITEMS_RESPONSE=$(curl -s -L \
+          # GraphQL query to get project items associated with the specific issue/PR
+          # and then we will filter by the target project ID
+          GRAPHQL_QUERY='
+          query($nodeId: ID!) {
+            node(id: $nodeId) {
+              ... on Issue {
+                projectV2Items(first: 20) { # An issue is rarely in more than a few projects
+                  nodes {
+                    id          # This is the ProjectV2Item ID we need
+                    project {
+                      id        # The ID of the project this item belongs to
+                      title
+                    }
+                  }
+                }
+              }
+              ... on PullRequest {
+                projectV2Items(first: 20) {
+                  nodes {
+                    id
+                    project {
+                      id
+                      title
+                    }
+                  }
+                }
+              }
+            }
+          }'
+
+          # Prepare variables for the GraphQL query
+          VARIABLES_JSON=$(jq -n --arg nodeId "$ITEM_CONTENT_ID" '{ "nodeId": $nodeId }')
+
+          # Construct the final JSON payload for curl
+          JSON_PAYLOAD=$(jq -n --arg query "$GRAPHQL_QUERY" --argjson variables "$VARIABLES_JSON" \
+            '{ query: $query, variables: $variables }')
+            
+          echo "Sending GraphQL Payload to find linked project item:"
+          echo "$JSON_PAYLOAD"
+
+          ITEM_PROJECT_DATA_RESPONSE=$(curl -s -L \
             -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             https://api.github.com/graphql \
-            -d '{
-              "query": "query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { items(first: 100) { nodes { id content { ... on Issue { id number repository { nameWithOwner } } ... on PullRequest { id number repository { nameWithOwner } } } } } } } }",
-              "variables": {
-                "projectId": "'"$PROJECT_ID"'"
-              }
-            }')
+            -d "$JSON_PAYLOAD")
 
-          echo "GraphQL Response for Project Items:"
-          echo "$PROJECT_ITEMS_RESPONSE" # Log the response for debugging
+          echo "GraphQL Response for Item's Project Links:"
+          echo "$ITEM_PROJECT_DATA_RESPONSE"
 
           # Check for GraphQL errors
-          if echo "$PROJECT_ITEMS_RESPONSE" | jq -e '.errors' > /dev/null; then
-            echo "Error: GraphQL query for project items failed:"
-            echo "$PROJECT_ITEMS_RESPONSE" | jq '.errors'
+          if echo "$ITEM_PROJECT_DATA_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Error: GraphQL query for item's project links failed:"
+            echo "$ITEM_PROJECT_DATA_RESPONSE" | jq '.errors'
             exit 1
           fi
 
-          # Check if the expected path exists before trying to iterate
-          if ! echo "$PROJECT_ITEMS_RESPONSE" | jq -e '.data.node.items.nodes' > /dev/null; then
-            echo "Error: '.data.node.items.nodes' path not found or is null in GraphQL response."
-            echo "This could mean the project ID is invalid, has no items, or there was an API issue."
-            exit 1
-          fi
-          
-          # If nodes is null (but items exists), treat as empty to avoid jq error
-          # This handles cases where a project exists but has 0 items.
-          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEMS_RESPONSE" | jq -r --arg ITEM_CONTENT_ID "$ITEM_CONTENT_ID" --arg REPO_FULL_NAME "$REPO_OWNER/$REPO_NAME" \
-            '.data.node.items.nodes[]? | select(.content != null and .content.id == $ITEM_CONTENT_ID and .content.repository.nameWithOwner == $REPO_FULL_NAME) | .id // empty')
+          # Extract the ProjectV2Item ID if the item is in our target project
+          # The jq path accesses .data.node (which is the issue/PR)
+          # then .projectV2Items.nodes (the list of project cards for that issue/PR)
+          # then filters that list where the card's .project.id matches our target PROJECT_ID
+          # and finally extracts the .id of that card.
+          PROJECT_ITEM_ID=$(echo "$ITEM_PROJECT_DATA_RESPONSE" | jq -r \
+            --arg TARGET_PROJECT_ID "$PROJECT_ID" \
+            '.data.node.projectV2Items.nodes[]? | select(.project.id == $TARGET_PROJECT_ID) | .id // empty')
 
           if [ -z "$PROJECT_ITEM_ID" ]; then
-            echo "Warning: Could not find ProjectV2Item ID for content ID '$ITEM_CONTENT_ID' from repo '$REPO_OWNER/$REPO_NAME' in project '$PROJECT_ID'. The issue/PR might not be in the project, or the lookup query failed."
-            # Decide if this should be a failure or a graceful exit.
-            # For your use case, `exit 0` seems correct if the item not being in the project is acceptable.
-            exit 0 
+            echo "Warning: Could not find the Item (Content ID: $ITEM_CONTENT_ID) linked to the specific target project (Project ID: $PROJECT_ID)."
+            echo "The workflow was triggered for this item, but it does not appear to be in the specified project according to its own project links."
+            echo "Please ensure the item is correctly added to the project '$PROJECT_ID' and that the IDs are correct."
+            exit 0 # Gracefully exit if item not found linked to this specific project
           fi
           
           echo "PROJECT_ITEM_ID=$PROJECT_ITEM_ID" >> $GITHUB_OUTPUT
-          echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID"
+          echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID (for Content ID $ITEM_CONTENT_ID) specifically linked to Project ID $PROJECT_ID"
 
       - name: Get Project Status Field ID and Option ID for "Done"
         id: get_field_ids
