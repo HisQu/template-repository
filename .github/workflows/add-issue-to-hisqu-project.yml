@@ -22,8 +22,8 @@ jobs:
           # github-token: ${{ secrets.YOUR_PAT_WITH_PROJECT_SCOPE }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const orgLogin = "HisQu";         // Your organization's login name
-            const projectV2Number = 1;        // <<<< SET YOUR PROJECT V2 NUMBER HERE (e.g., 1 if it's "HisQu/1")
+            const orgLogin = "HisQu";
+            const projectTitleQuery = "HisQu"; // The title string to search for your Project V2
 
             const issuePayload = context.payload.issue;
             if (!issuePayload) {
@@ -40,39 +40,51 @@ jobs:
               return;
             }
 
-            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) from ${ownerName}/${repoName} to Project V2 number ${projectV2Number} in org "${orgLogin}".`);
+            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) from ${ownerName}/${repoName} to Project V2 found by title query "${projectTitleQuery}" in org "${orgLogin}".`);
 
             let projectV2Id;
-            let projectV2Title; // To store the actual title of the found project
+            let actualProjectTitle; // To store and log the title of the project we actually found
+
             try {
-              core.info(`Fetching ID for Project V2 number ${projectV2Number} in org "${orgLogin}"...`);
+              core.info(`Fetching Project V2 using title query "${projectTitleQuery}" in org "${orgLogin}"...`);
               const projectQueryResult = await github.graphql(
-                `query FindProjectByNumber($orgLogin: String!, $projectV2Number: Int!) {
+                `query FindProjectV2ByTitle($orgLogin: String!, $projectTitleQuery: String!) {
                   organization(login: $orgLogin) {
-                    projectV2(number: $projectV2Number) { # Query by number
-                      id
-                      title
+                    projectsV2(query: $projectTitleQuery, first: 1) { # Query by title string, take the first result
+                      nodes {
+                        id
+                        title
+                      }
                     }
                   }
                 }`,
-                { orgLogin, projectV2Number }
+                { orgLogin, projectTitleQuery }
               );
 
-              if (projectQueryResult.organization && projectQueryResult.organization.projectV2) {
-                projectV2Id = projectQueryResult.organization.projectV2.id;
-                projectV2Title = projectQueryResult.organization.projectV2.title; // Get the actual title
-                core.info(`Found Project V2: "${projectV2Title}" (ID: ${projectV2Id}) by number ${projectV2Number}.`);
+              const foundProjects = projectQueryResult.organization.projectsV2.nodes;
+              if (foundProjects.length > 0) {
+                // Using the first project found by the title query, similar to your sync script
+                projectV2Id = foundProjects[0].id;
+                actualProjectTitle = foundProjects[0].title; 
+                core.info(`Found Project V2: "${actualProjectTitle}" (ID: ${projectV2Id}). This project was the first result for title query "${projectTitleQuery}".`);
+                
+                // Optional: If you want to be stricter and ensure the found title is an EXACT match, uncomment below.
+                // Your sync script appears to just take the first result without this exact check.
+                // if (actualProjectTitle !== projectTitleQuery) {
+                //   core.warning(`Warning: The found project title "${actualProjectTitle}" is not an exact match to the query string "${projectTitleQuery}". Proceeding with the found project.`);
+                // }
+
               } else {
-                core.setFailed(`Project V2 number ${projectV2Number} not found under organization "${orgLogin}". Please check the project number.`);
+                core.setFailed(`No Project V2 found using title query "${projectTitleQuery}" under organization "${orgLogin}". Please ensure a project with a title containing "${projectTitleQuery}" exists and is accessible.`);
                 return;
               }
             } catch (error) {
-              core.setFailed(`Error finding Project V2 number ${projectV2Number} for org "${orgLogin}": ${error.message}`);
+              core.setFailed(`Error querying for Project V2 with title query "${projectTitleQuery}" for org "${orgLogin}": ${error.message}`);
               return;
             }
 
             try {
-              core.info(`Adding issue (Content ID: ${issueNodeId}) to project "${projectV2Title}" (Project ID: ${projectV2Id})...`);
+              core.info(`Adding issue (Content ID: ${issueNodeId}) to project "${actualProjectTitle}" (Project ID: ${projectV2Id})...`);
               await github.graphql(
                 `mutation AddItemToProjectV2($projectId: ID!, $contentId: ID!) {
                   addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
@@ -83,7 +95,7 @@ jobs:
                 }`,
                 { projectId: projectV2Id, contentId: issueNodeId }
               );
-              core.info(`Issue #${issueNumber} successfully added to Project V2 "${projectV2Title}".`);
+              core.info(`Issue #${issueNumber} successfully added to Project V2 "${actualProjectTitle}".`);
             } catch (error) {
               const errorMessage = String(error.message || '').toLowerCase();
               let isAlreadyExistsError = false;
@@ -94,8 +106,8 @@ jobs:
               }
               
               if (isAlreadyExistsError) {
-                core.info(`Issue #${issueNumber} is already in Project V2 "${projectV2Title}". (API Message: ${error.message})`);
+                core.info(`Issue #${issueNumber} is already in Project V2 "${actualProjectTitle}". (API Message: ${error.message})`);
               } else {
-                core.setFailed(`Error adding issue #${issueNumber} to Project V2 "${projectV2Title}": ${error.message}`);
+                core.setFailed(`Error adding issue #${issueNumber} to Project V2 "${actualProjectTitle}": ${error.message}`);
               }
             }
