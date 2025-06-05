@@ -92,7 +92,7 @@ jobs:
               }
             }
 
-            // **NEW** Function to delete a label
+            // Function to delete a label
             async function deleteLabel(targetOwner, targetRepo, labelName) {
                core.info(`Deleting label "${labelName}" from ${targetOwner}/${targetRepo}`);
                try {
@@ -235,6 +235,47 @@ jobs:
                 core.warning(`Failed to fetch existing project items (issues/PRs) for duplicate check: ${error.message}. This indicates a GraphQL query syntax issue or continued PAT permission problems accessing content data in specific repositories. The script will continue and rely on the Project API's duplicate check.`);
                 // We still continue because the addProjectV2ItemById mutation will fail if it's a true duplicate.
               }
+
+
+              async function deleteFileIfExists(targetOwner, targetRepo, filePath, commitMessage) {
+                core.info(`Checking if file "${filePath}" exists in ${targetOwner}/${targetRepo} for deletion...`);
+                try {
+                  // First, get the SHA of the file to delete it
+                  const { data: existingFile } = await github.rest.repos.getContent({
+                    owner: targetOwner,
+                    repo: targetRepo,
+                    path: filePath,
+                  });
+  
+                  // If getContent succeeds and returns file info (it will error with 404 if not found)
+                  if (existingFile && existingFile.sha) {
+                    core.info(`File "${filePath}" found with SHA ${existingFile.sha}. Attempting to delete...`);
+                    await github.rest.repos.deleteFile({
+                      owner: targetOwner,
+                      repo: targetRepo,
+                      path: filePath,
+                      message: commitMessage,
+                      sha: existingFile.sha,
+                    });
+                    core.info(`Successfully deleted file "${filePath}" from ${targetOwner}/${targetRepo}.`);
+                    return true;
+                  } else {
+                    // Should not be reached if getContent behaves as expected (throws 404 or returns file data)
+                    core.info(`File "${filePath}" was checked but no SHA was found (or file is a directory). No deletion performed.`);
+                    return true; // Or false if this state is an error for you
+                  }
+                } catch (error) {
+                  if (error.status === 404) {
+                    core.info(`File "${filePath}" does not exist in ${targetOwner}/${targetRepo}. No deletion needed.`);
+                    return true; // File is not there, which is the goal.
+                  } else {
+                    core.error(`Error during deletion process for file "${filePath}" in ${targetOwner}/${targetRepo}: ${error.message}`);
+                    // For more detail on the error object:
+                    // core.error(`Full error details: ${JSON.stringify(error)}`);
+                    return false; // An actual error occurred during the process
+                  }
+                }
+              }
             
             
               // 2. Fetch all issues from the current target repository
@@ -347,9 +388,7 @@ jobs:
             core.info('Defining specific workflow files to sync...');
             // Liste der Workflows, die Sie gezielt synchronisieren möchten
             const workflowsToSyncByName = [
-                'add-pr-to-project.yml',
                 'toc.yml',
-                'add-issue-to-hisqu-project.yml',
                 'auto-set-project-status-on-close.yml'
             ];
             
@@ -393,7 +432,7 @@ jobs:
               }
               core.info(`Created ${createdCount} missing labels.`);
 
-              // **NEW** Prune extra labels (if requested)
+              // Prune extra labels (if requested)
               if (pruneLabels) {
                   core.info(`Pruning enabled. Checking for extra labels in target...`);
                   let deletedCount = 0;
@@ -459,6 +498,25 @@ jobs:
               } else {
                 core.info(`Skipping workflow sync for ${targetOwner}/${targetRepoName} as no workflow files were found initially.`);
               }
+                
+              core.info(`--- Starting cleanup of specific workflow files for ${targetOwner}/${targetRepoName} ---`);
+              const deleteCommitMsg = 'Admin: Remove deprecated auto-add to project workflows';
+              const filesToDelete = [
+                '.github/workflows/add-issue-to-hisqu-project.yml',
+                '.github/workflows/add-pr-to-hisqu-project.yml'
+              ];
+
+              for (const fileToDelete of filesToDelete) {
+                core.info(`Attempting to delete workflow file: ${fileToDelete} from ${targetOwner}/${targetRepoName}...`);
+                const deletionSuccessful = await deleteFileIfExists(targetOwner, targetRepoName, fileToDelete, deleteCommitMsg);
+                if (!deletionSuccessful) {
+                    // This means an actual error occurred during deletion (not just "file not found")
+                    core.warning(`Deletion of ${fileToDelete} encountered an error for ${targetOwner}/${targetRepoName}. Please review logs.`);
+                    overallSuccess = false; // Optionally mark the overall sync as problematic
+                }
+              }
+              core.info(`--- Finished cleanup of specific workflow files for ${targetOwner}/${targetRepoName} ---`);
+              
 
               core.info(`Syncing all existing issues to HisQu project for ${targetOwner}/${targetRepoName}...`);
               await addAllIssuesAndPullRequestsToHisQuProject(targetOwner, targetRepoName);
