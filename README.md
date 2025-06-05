@@ -28,7 +28,6 @@
   * [Step by Step:](#step-by-step)
 - [Development](#development)
 
-<!-- tocstop -->
 
 <!-- /toc -->
 <br/>
