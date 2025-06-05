@@ -1,74 +1,94 @@
-name: Add New Issues to HisQu Project
+name: Add New Issue to HisQu Classic Project
 
 on:
   issues:
     types: [opened]
 
 jobs:
-  add-to-project:
+  add-to-classic-project:
     runs-on: ubuntu-latest
     permissions:
-      issues: write
-      projects: write
-      repository-projects: write
+      issues: write # Required to access issue details like node_id.
+      repository-projects: write 
 
     steps:
-      - name: Check if issue is already in HisQu project and add if not
-        uses: actions/github-script@v6
+      - name: Add issue to HisQu classic project
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const projectFullName = "HisQu/1"; // org/project_number
+            const projectFullName = "HisQu/1"; // Expected format: ownerName/projectNumber (e.g., MyOrg/1)
+            const [ownerName, projectNumberStr] = projectFullName.split('/');
+            const projectNumber = parseInt(projectNumberStr, 10);
 
-            // Parse org and project number
-            const [orgName, projectNumber] = projectFullName.split('/');
-
-            // Get the project by number for the org
-            const { data: projects } = await github.rest.projects.listForOrg({
-              org: orgName,
-              state: 'open'
-            });
-
-            const project = projects.find(p => p.number.toString() === projectNumber);
-            if (!project) {
-              core.setFailed(`Project HisQu/1 not found`);
+            if (!ownerName || isNaN(projectNumber)) {
+              core.setFailed(`Invalid project format "${projectFullName}". Expected 'ownerName/projectNumber'.`);
               return;
             }
 
-            // Get all columns in the project
+            core.info(`Attempting to find classic project: ${ownerName}/${projectNumber}`);
+            let projectData;
+            try {
+              // Assuming ownerName is an organization. If it could be a user, you'd need more logic.
+              const { data: orgProjects } = await github.rest.projects.listForOrg({
+                org: ownerName,
+                state: 'open',
+                per_page: 100 // Adjust if you have more than 100 open projects in the org
+              });
+              projectData = orgProjects.find(p => p.number === projectNumber);
+            } catch (error) {
+              core.setFailed(`Error fetching projects for organization "${ownerName}": ${error.message}. Check if the organization name is correct and the token has 'read:org' (for org projects) or equivalent permissions if using PAT.`);
+              return;
+            }
+
+            if (!projectData) {
+              core.setFailed(`Classic project "${projectFullName}" not found for organization "${ownerName}".`);
+              return;
+            }
+            core.info(`Found classic project: "${projectData.name}" (ID: ${projectData.id})`);
+
             const { data: columns } = await github.rest.projects.listColumns({
-              project_id: project.id
+              project_id: projectData.id
             });
 
             if (columns.length === 0) {
-              core.setFailed(`No columns found in project HisQu/1`);
+              core.setFailed(`No columns found in project "${projectFullName}". An issue cannot be added.`);
               return;
             }
+            const firstColumn = columns[0];
+            core.info(`Project has ${columns.length} column(s). Target column for new issues: "${firstColumn.name}" (ID: ${firstColumn.id})`);
 
-            // Get cards from all columns to check if issue is already present
-            let issueAlreadyInProject = false;
-            for (const column of columns) {
-              const cards = await github.paginate(github.rest.projects.listCards, {
-                column_id: column.id,
-                per_page: 100,
+            const issuePayload = context.payload.issue;
+            if (!issuePayload) {
+              core.setFailed("Issue payload is not available in the context.");
+              return;
+            }
+            const issueNumber = issuePayload.number;
+            const issueNodeId = issuePayload.node_id;
+
+            if (!issueNodeId) {
+              core.setFailed(`Issue node_id is missing in the event payload for issue #${issueNumber}. Cannot add to project.`);
+              return;
+            }
+            
+            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) to the first column of project "${projectFullName}".`);
+
+            try {
+              await github.rest.projects.createCard({
+                column_id: firstColumn.id,
+                content_id: issueNodeId,
+                content_type: 'Issue',
               });
-              if (cards.some(card => card.content_url?.endsWith(`/issues/${context.payload.issue.number}`))) {
-                issueAlreadyInProject = true;
-                break;
+              core.info(`Successfully added issue #${issueNumber} to project "${projectFullName}" in column "${firstColumn.name}".`);
+            } catch (error) {
+              const errorMessage = String(error.message || '').toLowerCase();
+              // Check for HTTP 422 status and common phrases indicating the card/issue already exists.
+              if (error.status === 422 && (errorMessage.includes('already exists') || errorMessage.includes('already in project') || errorMessage.includes('is already taken') || errorMessage.includes('project card already exists'))) {
+                core.info(`Issue #${issueNumber} is already in project "${projectFullName}" (API Message: ${error.message}). No further action needed for adding.`);
+              } else {
+                // For any other error, fail the action.
+                core.setFailed(`Failed to add issue #${issueNumber} to project "${projectFullName}". Error: ${error.message} (Status: ${error.status})`);
+                // For detailed debugging, you might want to log the full error object:
+                // console.error("Full error object:", JSON.stringify(error, null, 2));
               }
             }
-
-            if (issueAlreadyInProject) {
-              core.info(`Issue #${context.payload.issue.number} is already in the HisQu project.`);
-              return;
-            }
-
-            // Add issue to the first column in the project (you can customize which column)
-            const firstColumn = columns[0];
-            await github.rest.projects.createCard({
-              column_id: firstColumn.id,
-              content_id: context.payload.issue.node_id,
-              content_type: 'Issue',
-            });
-
-            core.info(`Issue #${context.payload.issue.number} added to HisQu project in column '${firstColumn.name}'.`);
