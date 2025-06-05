@@ -385,8 +385,7 @@ jobs:
             core.info('Defining specific workflow files to sync...');
             // Liste der Workflows, die Sie gezielt synchronisieren möchten
             const workflowsToSyncByName = [
-                'toc.yml',
-                'auto-set-project-status-on-close.yml'
+                'toc.yml'
             ];
             
             const workflowFiles = workflowsToSyncByName.map(fileName => path.join(workflowSourceDir, fileName));
@@ -501,7 +500,7 @@ jobs:
               const filesToDelete = [
                 '.github/workflows/add-issue-to-hisqu-project.yml',
                 '.github/workflows/add-pr-to-project.yml',
-                'auto-set-project-status-on-close.yml'
+                '.github/workflows/auto-set-project-status-on-close.yml'
               ];
 
               for (const fileToDelete of filesToDelete) {
