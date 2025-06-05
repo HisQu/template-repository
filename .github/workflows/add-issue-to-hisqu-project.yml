@@ -1,113 +1,29 @@
-name: Add New Issue to HisQu Project (V2)
+# This workflow adds new issues to the HisQu project.
 
+name: Add New Issue to HisQu Project
 on:
   issues:
-    types: [opened]
+    types: [opened] # This action only runs when a new issue is opened
 
 jobs:
-  add-to-project-v2:
+  add-to-project:
+    name: Add Issue to project
     runs-on: ubuntu-latest
     permissions:
-      issues: read # Required to get issue.node_id
-      # For Projects V2, GITHUB_TOKEN can often interact with organization projects
-      # if repository and organization settings permit.
-      # If GITHUB_TOKEN is insufficient, you might need a PAT with 'project' or 'write:project' scope.
+      # This permission allows the action to access issue data (like its ID)
+      # and potentially make changes if the action needed to (though add-to-project primarily reads the issue).
+      issues: write # Or issues: read might be sufficient if the action only needs to read issue data. Start with 'write' for safety.
+      
+      # For GITHUB_TOKEN to modify an organization-level project (Classic or V2),
+      # your organization settings must allow GitHub Actions to manage projects.
+      # Since your PR workflow works with GITHUB_TOKEN, it's likely these settings are permissive enough.
 
     steps:
-      - name: Add issue to HisQu Project (V2)
-        uses: actions/github-script@v7
+      - name: Add issue to the HisQu project
+        uses: actions/add-to-project@v1.0.1 # Using the same version as your working PR script
         with:
-          # If GITHUB_TOKEN doesn't have enough permissions for your org project,
-          # you might need to use a PAT with 'project' scope:
-          # github-token: ${{ secrets.YOUR_PAT_WITH_PROJECT_SCOPE }}
+          # The URL of your project.
+          project-url: "https://github.com/orgs/HisQu/projects/1" # Same as your PR script
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const orgLogin = "HisQu";
-            const projectTitleQuery = "HisQu"; // The title string to search for your Project V2
-
-            const issuePayload = context.payload.issue;
-            if (!issuePayload) {
-              core.setFailed("Issue payload is not available in the context.");
-              return;
-            }
-            const issueNodeId = issuePayload.node_id;
-            const issueNumber = issuePayload.number;
-            const repoName = context.repo.repo;
-            const ownerName = context.repo.owner;
-
-            if (!issueNodeId) {
-              core.setFailed(`Issue node_id is missing for issue #${issueNumber}. Cannot add to project.`);
-              return;
-            }
-
-            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) from ${ownerName}/${repoName} to Project V2 found by title query "${projectTitleQuery}" in org "${orgLogin}".`);
-
-            let projectV2Id;
-            let actualProjectTitle; // To store and log the title of the project we actually found
-
-            try {
-              core.info(`Fetching Project V2 using title query "${projectTitleQuery}" in org "${orgLogin}"...`);
-              const projectQueryResult = await github.graphql(
-                `query FindProjectV2ByTitle($orgLogin: String!, $projectTitleQuery: String!) {
-                  organization(login: $orgLogin) {
-                    projectsV2(query: $projectTitleQuery, first: 1) { # Query by title string, take the first result
-                      nodes {
-                        id
-                        title
-                      }
-                    }
-                  }
-                }`,
-                { orgLogin, projectTitleQuery }
-              );
-
-              const foundProjects = projectQueryResult.organization.projectsV2.nodes;
-              if (foundProjects.length > 0) {
-                // Using the first project found by the title query, similar to your sync script
-                projectV2Id = foundProjects[0].id;
-                actualProjectTitle = foundProjects[0].title; 
-                core.info(`Found Project V2: "${actualProjectTitle}" (ID: ${projectV2Id}). This project was the first result for title query "${projectTitleQuery}".`);
-                
-                // Optional: If you want to be stricter and ensure the found title is an EXACT match, uncomment below.
-                // Your sync script appears to just take the first result without this exact check.
-                // if (actualProjectTitle !== projectTitleQuery) {
-                //   core.warning(`Warning: The found project title "${actualProjectTitle}" is not an exact match to the query string "${projectTitleQuery}". Proceeding with the found project.`);
-                // }
-
-              } else {
-                core.setFailed(`No Project V2 found using title query "${projectTitleQuery}" under organization "${orgLogin}". Please ensure a project with a title containing "${projectTitleQuery}" exists and is accessible.`);
-                return;
-              }
-            } catch (error) {
-              core.setFailed(`Error querying for Project V2 with title query "${projectTitleQuery}" for org "${orgLogin}": ${error.message}`);
-              return;
-            }
-
-            try {
-              core.info(`Adding issue (Content ID: ${issueNodeId}) to project "${actualProjectTitle}" (Project ID: ${projectV2Id})...`);
-              await github.graphql(
-                `mutation AddItemToProjectV2($projectId: ID!, $contentId: ID!) {
-                  addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                    item {
-                      id
-                    }
-                  }
-                }`,
-                { projectId: projectV2Id, contentId: issueNodeId }
-              );
-              core.info(`Issue #${issueNumber} successfully added to Project V2 "${actualProjectTitle}".`);
-            } catch (error) {
-              const errorMessage = String(error.message || '').toLowerCase();
-              let isAlreadyExistsError = false;
-              if (errorMessage.includes('already part of this project') || errorMessage.includes('item already exists')) {
-                isAlreadyExistsError = true;
-              } else if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
-                isAlreadyExistsError = error.errors.some(e => String(e.message || '').toLowerCase().includes('already been added'));
-              }
-              
-              if (isAlreadyExistsError) {
-                core.info(`Issue #${issueNumber} is already in Project V2 "${actualProjectTitle}". (API Message: ${error.message})`);
-              } else {
-                core.setFailed(`Error adding issue #${issueNumber} to Project V2 "${actualProjectTitle}": ${error.message}`);
-              }
-            }
+          # Optional: If you want to add the issue to a specific column:
+          # column-name: "To Do" 
