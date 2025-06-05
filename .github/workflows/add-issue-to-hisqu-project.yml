@@ -22,8 +22,8 @@ jobs:
           # github-token: ${{ secrets.YOUR_PAT_WITH_PROJECT_SCOPE }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const orgLogin = "HisQu"; // Your organization's login name
-            const projectV2Title = "HisQu"; // The exact title of your Project V2
+            const orgLogin = "HisQu";         // Your organization's login name
+            const projectV2Number = 1;        // <<<< SET YOUR PROJECT V2 NUMBER HERE (e.g., 1 if it's "HisQu/1")
 
             const issuePayload = context.payload.issue;
             if (!issuePayload) {
@@ -40,40 +40,39 @@ jobs:
               return;
             }
 
-            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) from ${ownerName}/${repoName} to Project V2 titled "${projectV2Title}" in org "${orgLogin}".`);
+            core.info(`Attempting to add issue #${issueNumber} (Node ID: ${issueNodeId}) from ${ownerName}/${repoName} to Project V2 number ${projectV2Number} in org "${orgLogin}".`);
 
             let projectV2Id;
+            let projectV2Title; // To store the actual title of the found project
             try {
-              core.info(`Fetching ID for Project V2 titled "${projectV2Title}"...`);
+              core.info(`Fetching ID for Project V2 number ${projectV2Number} in org "${orgLogin}"...`);
               const projectQueryResult = await github.graphql(
-                `query FindProjectV2($orgLogin: String!, $projectV2Title: String!) {
+                `query FindProjectByNumber($orgLogin: String!, $projectV2Number: Int!) {
                   organization(login: $orgLogin) {
-                    projectsV2(query: $projectV2Title, first: 1) {
-                      nodes {
-                        id
-                        title
-                      }
+                    projectV2(number: $projectV2Number) { # Query by number
+                      id
+                      title
                     }
                   }
-                }`, // Plain backtick ends the template literal
-                { orgLogin, projectV2Title }
+                }`,
+                { orgLogin, projectV2Number }
               );
 
-              const projects = projectQueryResult.organization.projectsV2.nodes;
-              if (projects.length > 0 && projects[0].title === projectV2Title) { // Verify exact title match
-                projectV2Id = projects[0].id;
-                core.info(`Found Project V2: "${projects[0].title}" (ID: ${projectV2Id})`);
+              if (projectQueryResult.organization && projectQueryResult.organization.projectV2) {
+                projectV2Id = projectQueryResult.organization.projectV2.id;
+                projectV2Title = projectQueryResult.organization.projectV2.title; // Get the actual title
+                core.info(`Found Project V2: "${projectV2Title}" (ID: ${projectV2Id}) by number ${projectV2Number}.`);
               } else {
-                core.setFailed(`Project V2 with title "${projectV2Title}" not found under organization "${orgLogin}". Please check the project title and organization name.`);
+                core.setFailed(`Project V2 number ${projectV2Number} not found under organization "${orgLogin}". Please check the project number.`);
                 return;
               }
             } catch (error) {
-              core.setFailed(`Error finding Project V2 "${projectV2Title}": ${error.message}`);
+              core.setFailed(`Error finding Project V2 number ${projectV2Number} for org "${orgLogin}": ${error.message}`);
               return;
             }
 
             try {
-              core.info(`Adding issue (Content ID: ${issueNodeId}) to project (Project ID: ${projectV2Id})...`);
+              core.info(`Adding issue (Content ID: ${issueNodeId}) to project "${projectV2Title}" (Project ID: ${projectV2Id})...`);
               await github.graphql(
                 `mutation AddItemToProjectV2($projectId: ID!, $contentId: ID!) {
                   addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
@@ -81,14 +80,12 @@ jobs:
                       id
                     }
                   }
-                }`, // Plain backtick ends the template literal
+                }`,
                 { projectId: projectV2Id, contentId: issueNodeId }
               );
               core.info(`Issue #${issueNumber} successfully added to Project V2 "${projectV2Title}".`);
             } catch (error) {
               const errorMessage = String(error.message || '').toLowerCase();
-              // Check for common phrases indicating the item is already in the project
-              // GraphQL errors might be nested under error.errors[0].message
               let isAlreadyExistsError = false;
               if (errorMessage.includes('already part of this project') || errorMessage.includes('item already exists')) {
                 isAlreadyExistsError = true;
@@ -100,7 +97,5 @@ jobs:
                 core.info(`Issue #${issueNumber} is already in Project V2 "${projectV2Title}". (API Message: ${error.message})`);
               } else {
                 core.setFailed(`Error adding issue #${issueNumber} to Project V2 "${projectV2Title}": ${error.message}`);
-                // For detailed GraphQL errors, you might want to log the full error object:
-                // console.error("Full error object:", JSON.stringify(error, null, 2));
               }
             }
