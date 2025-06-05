@@ -73,90 +73,151 @@ jobs:
         id: get_project_item_id
         env:
           GITHUB_TOKEN: ${{ secrets.ORG_SYNC_PAT }}
-          PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}       # Node ID of the ProjectV2
-          ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }} # Node ID of the Issue/PR
+          PROJECT_ID: ${{ steps.get_initial_ids.outputs.PROJECT_ID }}
+          ITEM_CONTENT_ID: ${{ steps.get_initial_ids.outputs.ITEM_CONTENT_ID }}
+          # We need REPO_OWNER and REPO_NAME for precise matching if issues can have same numbers in different repos
+          REPO_OWNER: ${{ steps.get_initial_ids.outputs.REPO_OWNER }}
+          REPO_NAME: ${{ steps.get_initial_ids.outputs.REPO_NAME }}
         run: |
-          echo "Attempting to find project item for content (Issue/PR) ID: $ITEM_CONTENT_ID within project ID: $PROJECT_ID"
+          echo "Attempting to find project item for content (Issue/PR) ID: $ITEM_CONTENT_ID in project ID: $PROJECT_ID"
+          echo "Target repository: $REPO_OWNER/$REPO_NAME"
 
-          # GraphQL query to find a project item within a specific project by the content's (Issue/PR) Node ID.
-          GRAPHQL_QUERY='
-          query($projectId: ID!, $itemContentId: ID!) {
-            node(id: $projectId) {  # Query the ProjectV2 node
-              ... on ProjectV2 {
-                title
-                # Get the specific item by the content ID (Issue/PR ID)
-                # An Issue/PR can only appear once in a given project.
-                itemsByContentView(contentId: $itemContentId, first: 1) {
-                  nodes {
-                    id # This is the ProjectV2Item ID we are looking for
+          PROJECT_ITEM_ID=""
+          HAS_NEXT_PAGE="true" # Start by assuming there's a page
+          CURSOR="null"        # GraphQL null, not the string "null" for the first request's variable
+          REPO_FULL_NAME="$REPO_OWNER/$REPO_NAME"
+
+          LOOP_COUNT=0
+          # Max 15 pages for up to 1500 items (100 items/page). Adjust if your project can be larger.
+          MAX_LOOPS=15 
+
+          while [ -z "$PROJECT_ITEM_ID" ] && [ "$HAS_NEXT_PAGE" == "true" ] && [ "$LOOP_COUNT" -lt "$MAX_LOOPS" ]; do
+            LOOP_COUNT=$((LOOP_COUNT + 1))
+            echo "Fetching project items page: $LOOP_COUNT, Current cursor: $CURSOR"
+
+            # Prepare cursor string for insertion into query.
+            # If CURSOR is the literal string "null" (meaning first page), CURSOR_GQL_ARG should be empty.
+            # Otherwise, it should be "after: \"$CURSOR\"".
+            if [ "$CURSOR" == "null" ]; then
+              CURSOR_GQL_ARG=""
+            else
+              CURSOR_GQL_ARG="after: \"$CURSOR\""
+            fi
+
+            GRAPHQL_QUERY_TEMPLATE='
+            query($projectId: ID!, $pageCursor: String) { # Use $pageCursor for the 'after' argument
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  title
+                  items(first: 100, %CURSOR_PLACEHOLDER% orderBy: {field: POSITION, direction: ASC}) {
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                    nodes {
+                      id # ProjectV2Item ID
+                      content {
+                        __typename # Important for knowing the type of content
+                        ... on Issue { id repository { fullName:nameWithOwner } } # Alias to fullName for easier access
+                        ... on PullRequest { id repository { fullName:nameWithOwner } }
+                        # Add ... on DraftIssue { title } if you use draft issues and need to match them
+                      }
+                    }
                   }
-                  totalCount # Should be 0 if not found, 1 if found
                 }
               }
-            }
-          }'
-
-          # Prepare variables for the GraphQL query
-          VARIABLES_JSON=$(jq -n \
-            --arg projectId "$PROJECT_ID" \
-            --arg itemContentId "$ITEM_CONTENT_ID" \
-            '{ "projectId": $projectId, "itemContentId": $itemContentId }')
-
-          # Construct the final JSON payload for curl
-          JSON_PAYLOAD=$(jq -n --arg query "$GRAPHQL_QUERY" --argjson variables "$VARIABLES_JSON" \
-            '{ query: $query, variables: $variables }')
+            }'
+            # Replace placeholder with the actual cursor argument string
+            GRAPHQL_QUERY="${GRAPHQL_QUERY_TEMPLATE//%CURSOR_PLACEHOLDER%/$CURSOR_GQL_ARG}"
             
-          echo "Sending GraphQL Payload to find item by content ID within project:"
-          echo "$JSON_PAYLOAD"
+            # Variables for the GraphQL query.
+            # The $pageCursor variable in GraphQL should be 'String', which can accept 'null'.
+            VARIABLES_JSON=$(jq -n \
+              --arg projectId "$PROJECT_ID" \
+              --argjson pageCursor "$([ "$CURSOR" == "null" ] && echo null || echo "\"$CURSOR\"")" \
+              '{ "projectId": $projectId, "pageCursor": $pageCursor }')
 
-          PROJECT_ITEM_DATA_RESPONSE=$(curl -s -L \
-            -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            https://api.github.com/graphql \
-            -d "$JSON_PAYLOAD")
+            JSON_PAYLOAD=$(jq -n --arg query "$GRAPHQL_QUERY" --argjson variables "$VARIABLES_JSON" \
+              '{ query: $query, variables: $variables }')
 
-          echo "GraphQL Response:"
-          echo "$PROJECT_ITEM_DATA_RESPONSE"
+            # echo "DEBUG: JSON Payload for page $LOOP_COUNT:"
+            # echo "$JSON_PAYLOAD" # Uncomment for deep debugging
 
-          # Check for GraphQL errors
-          if echo "$PROJECT_ITEM_DATA_RESPONSE" | jq -e '.errors' > /dev/null; then
-            echo "Error: GraphQL query failed:"
-            echo "$PROJECT_ITEM_DATA_RESPONSE" | jq '.errors'
+            RESPONSE=$(curl -s -L \
+              -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              https://api.github.com/graphql \
+              -d "$JSON_PAYLOAD")
+            
+            # echo "DEBUG: GraphQL Response for page $LOOP_COUNT:"
+            # echo "$RESPONSE" # Uncomment for deep debugging
+
+            if echo "$RESPONSE" | jq -e '.errors' > /dev/null; then
+              echo "Error: GraphQL query failed on page $LOOP_COUNT:"
+              echo "$RESPONSE" | jq '.errors'
+              PROJECT_ITEM_ID="ERROR_GRAPHQL_PAGINATION" # Mark error
+              HAS_NEXT_PAGE="false" # Stop loop
+              continue
+            fi
+
+            # Extract pageInfo. Ensure paths are correct and handle nulls.
+            CURRENT_PAGE_HAS_NEXT=$(echo "$RESPONSE" | jq -r '.data.node.items.pageInfo.hasNextPage // "false"')
+            NEW_CURSOR_RAW=$(echo "$RESPONSE" | jq -r '.data.node.items.pageInfo.endCursor // "null"')
+
+            HAS_NEXT_PAGE="$CURRENT_PAGE_HAS_NEXT"
+            if [ "$NEW_CURSOR_RAW" != "null" ] && [ -n "$NEW_CURSOR_RAW" ]; then
+              CURSOR="$NEW_CURSOR_RAW"
+            else
+              CURSOR="null" # Set to string "null" if endCursor is actually null or empty
+            fi
+            
+            # Iterate over nodes in the current page using jq to find the match
+            # This is more efficient than a shell loop over many items.
+            FOUND_ON_PAGE=$(echo "$RESPONSE" | jq -r \
+              --arg targetContentId "$ITEM_CONTENT_ID" \
+              --arg targetRepoFullName "$REPO_FULL_NAME" \
+              '.data.node.items.nodes[]? | 
+               select(
+                 .content != null and 
+                 .content.id == $targetContentId and 
+                 (
+                   (.content.__typename == "Issue" or .content.__typename == "PullRequest") and 
+                   .content.repository.fullName == $targetRepoFullName
+                 )
+                 # Example for DraftIssue if you wanted to match by title:
+                 # or (.content.__typename == "DraftIssue" and .content.title == "Your Draft Title")
+               ) | .id // empty')
+
+            if [ -n "$FOUND_ON_PAGE" ]; then
+              PROJECT_ITEM_ID="$FOUND_ON_PAGE"
+              PROJECT_TITLE_FROM_RESPONSE=$(echo "$RESPONSE" | jq -r '.data.node.title // "Project (title not in this response page)"')
+              echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID on page $LOOP_COUNT for Content ID $ITEM_CONTENT_ID in Project '$PROJECT_TITLE_FROM_RESPONSE'"
+              # No need to change HAS_NEXT_PAGE, outer loop condition -z "$PROJECT_ITEM_ID" will handle it
+            elif [ "$HAS_NEXT_PAGE" == "false" ]; then
+              echo "Item not found on this page, and no more pages. (Page $LOOP_COUNT)"
+            else
+              echo "Item not found on page $LOOP_COUNT, proceeding to next page."
+            fi
+          done # End of while loop
+
+          if [ "$PROJECT_ITEM_ID" == "ERROR_GRAPHQL_PAGINATION" ]; then
+            echo "Critical Error: GraphQL query failed during pagination. Cannot determine ProjectV2Item ID."
             exit 1
+          elif [ -z "$PROJECT_ITEM_ID" ]; then
+            if [ "$LOOP_COUNT" -ge "$MAX_LOOPS" ]; then
+              echo "Warning: Reached max loop iteration ($MAX_LOOPS pages, approx. $($MAX_LOOPS*100) items) for finding item."
+            else
+              echo "Warning: Scanned all available pages of the project."
+            fi
+            echo "Item with Content ID '$ITEM_CONTENT_ID' from repo '$REPO_FULL_NAME' was NOT found in the project."
+            echo "Please ensure the issue/PR is correctly added to the project."
+            exit 0 # Gracefully exit if item not found after checking all relevant pages
           fi
 
-          # Check if the project node itself was found and is a ProjectV2
-          # (This check is more for robustness, as PROJECT_ID comes from a prior successful query)
-          if echo "$PROJECT_ITEM_DATA_RESPONSE" | jq -e '.data.node == null or (.data.node | has("itemsByContentView") | not)' > /dev/null; then
-            echo "Error: Could not resolve Project ID '$PROJECT_ID' to a ProjectV2 object, or 'itemsByContentView' field is missing."
-            echo "Response was: $PROJECT_ITEM_DATA_RESPONSE"
-            exit 1
-          fi
-          
-          PROJECT_TITLE=$(echo "$PROJECT_ITEM_DATA_RESPONSE" | jq -r '.data.node.title // "Unknown Project"')
-          TOTAL_COUNT=$(echo "$PROJECT_ITEM_DATA_RESPONSE" | jq -r '.data.node.itemsByContentView.totalCount // 0')
-
-          if [ "$TOTAL_COUNT" -eq "0" ]; then
-            echo "Warning: Item with Content ID '$ITEM_CONTENT_ID' was NOT found in Project '$PROJECT_TITLE' (ID: $PROJECT_ID) using 'itemsByContentView'."
-            echo "Please ensure the issue/PR is indeed added to this project."
-            exit 0 # Gracefully exit if item not found in the project
-          fi
-          
-          # Extract the ProjectV2Item ID
-          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEM_DATA_RESPONSE" | jq -r '.data.node.itemsByContentView.nodes[0].id // empty')
-
-          if [ -z "$PROJECT_ITEM_ID" ]; then
-            # This should ideally be caught by TOTAL_COUNT == 0 if nodes array is empty,
-            # but as a safeguard if nodes[0].id is null for some reason.
-            echo "Error: Found totalCount=$TOTAL_COUNT for item '$ITEM_CONTENT_ID' in project '$PROJECT_TITLE', but could not extract a valid ProjectV2Item ID."
-            echo "Response was: $PROJECT_ITEM_DATA_RESPONSE"
-            exit 1 
-          fi
-          
           echo "PROJECT_ITEM_ID=$PROJECT_ITEM_ID" >> $GITHUB_OUTPUT
-          echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID for Content ID $ITEM_CONTENT_ID in Project '$PROJECT_TITLE' (ID: $PROJECT_ID)"
+
       - name: Get Project Status Field ID and Option ID for "Done"
         id: get_field_ids
         env:
