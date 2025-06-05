@@ -78,8 +78,8 @@ jobs:
           REPO_NAME: ${{ steps.get_initial_ids.outputs.REPO_NAME }}
           REPO_OWNER: ${{ steps.get_initial_ids.outputs.REPO_OWNER }}
         run: |
-          # Query the project for its items (up to 100 or 1000, for practical purposes)
-          # We'll then filter locally using jq
+          echo "Attempting to find item with content ID: $ITEM_CONTENT_ID in project: $PROJECT_ID for repo: $REPO_OWNER/$REPO_NAME"
+
           PROJECT_ITEMS_RESPONSE=$(curl -s -L \
             -X POST \
             -H "Accept: application/vnd.github.v3+json" \
@@ -87,29 +87,41 @@ jobs:
             -H "Content-Type: application/json" \
             https://api.github.com/graphql \
             -d '{
-              "query": "query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { items(first: 100) { # Adjusted to first: 100 for broader fetch
-                nodes {
-                  id
-                  content {
-                    ... on Issue { id number repository { name nameWithOwner } }
-                    ... on PullRequest { id number repository { name nameWithOwner } }
-                  }
-                }
-              } } } }",
+              "query": "query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { items(first: 100) { nodes { id content { ... on Issue { id number repository { nameWithOwner } } ... on PullRequest { id number repository { nameWithOwner } } } } } } } }",
               "variables": {
                 "projectId": "'"$PROJECT_ID"'"
               }
             }')
 
-          # Use jq to find the ProjectV2Item ID for our specific issue/PR
-          # We check both the content ID and the repository name to be precise.
-          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEMS_RESPONSE" | jq -r --arg ITEM_CONTENT_ID "$ITEM_CONTENT_ID" --arg REPO_NAME "$REPO_NAME" --arg REPO_OWNER "$REPO_OWNER" \
-            '.data.node.items.nodes[] | select(.content != null and .content.id == $ITEM_CONTENT_ID and .content.repository.nameWithOwner == ($REPO_OWNER + "/" + $REPO_NAME)) | .id // empty')
+          echo "GraphQL Response for Project Items:"
+          echo "$PROJECT_ITEMS_RESPONSE" # Log the response for debugging
+
+          # Check for GraphQL errors
+          if echo "$PROJECT_ITEMS_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Error: GraphQL query for project items failed:"
+            echo "$PROJECT_ITEMS_RESPONSE" | jq '.errors'
+            exit 1
+          fi
+
+          # Check if the expected path exists before trying to iterate
+          if ! echo "$PROJECT_ITEMS_RESPONSE" | jq -e '.data.node.items.nodes' > /dev/null; then
+            echo "Error: '.data.node.items.nodes' path not found or is null in GraphQL response."
+            echo "This could mean the project ID is invalid, has no items, or there was an API issue."
+            exit 1
+          fi
+          
+          # If nodes is null (but items exists), treat as empty to avoid jq error
+          # This handles cases where a project exists but has 0 items.
+          PROJECT_ITEM_ID=$(echo "$PROJECT_ITEMS_RESPONSE" | jq -r --arg ITEM_CONTENT_ID "$ITEM_CONTENT_ID" --arg REPO_FULL_NAME "$REPO_OWNER/$REPO_NAME" \
+            '.data.node.items.nodes[]? | select(.content != null and .content.id == $ITEM_CONTENT_ID and .content.repository.nameWithOwner == $REPO_FULL_NAME) | .id // empty')
 
           if [ -z "$PROJECT_ITEM_ID" ]; then
             echo "Warning: Could not find ProjectV2Item ID for content ID '$ITEM_CONTENT_ID' from repo '$REPO_OWNER/$REPO_NAME' in project '$PROJECT_ID'. The issue/PR might not be in the project, or the lookup query failed."
-            exit 0 # Gracefully exit if item not found in project
+            # Decide if this should be a failure or a graceful exit.
+            # For your use case, `exit 0` seems correct if the item not being in the project is acceptable.
+            exit 0 
           fi
+          
           echo "PROJECT_ITEM_ID=$PROJECT_ITEM_ID" >> $GITHUB_OUTPUT
           echo "Found ProjectV2Item ID: $PROJECT_ITEM_ID"
 
