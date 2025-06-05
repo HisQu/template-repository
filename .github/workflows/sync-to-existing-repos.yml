@@ -500,7 +500,8 @@ jobs:
               const deleteCommitMsg = 'Admin: Remove deprecated auto-add to project workflows';
               const filesToDelete = [
                 '.github/workflows/add-issue-to-hisqu-project.yml',
-                '.github/workflows/add-pr-to-project.yml'
+                '.github/workflows/add-pr-to-project.yml',
+                'auto-set-project-status-on-close.yml'
               ];
 
               for (const fileToDelete of filesToDelete) {
