@@ -22,10 +22,6 @@ jobs:
           # github-token: ${{ secrets.YOUR_PAT_WITH_PROJECT_SCOPE }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const core = require('@actions/core'); // Ensure core is required if not globally available by default in older versions (v7 should have it)
-            const github = require('@actions/github'); // Ensure github is required (v7 should have it)
-            const context = github.context; // Ensure context is available
-
             const orgLogin = "HisQu"; // Your organization's login name
             const projectV2Title = "HisQu"; // The exact title of your Project V2
 
