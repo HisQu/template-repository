@@ -496,25 +496,6 @@ jobs:
                 core.info(`Skipping workflow sync for ${targetOwner}/${targetRepoName} as no workflow files were found initially.`);
               }
                 
-              core.info(`--- Starting cleanup of specific workflow files for ${targetOwner}/${targetRepoName} ---`);
-              const deleteCommitMsg = 'Admin: Remove deprecated auto-add to project workflows';
-              const filesToDelete = [
-                '.github/workflows/add-issue-to-hisqu-project.yml',
-                '.github/workflows/add-pr-to-hisqu-project.yml'
-              ];
-
-              for (const fileToDelete of filesToDelete) {
-                core.info(`Attempting to delete workflow file: ${fileToDelete} from ${targetOwner}/${targetRepoName}...`);
-                const deletionSuccessful = await deleteFileIfExists(targetOwner, targetRepoName, fileToDelete, deleteCommitMsg);
-                if (!deletionSuccessful) {
-                    // This means an actual error occurred during deletion (not just "file not found")
-                    core.warning(`Deletion of ${fileToDelete} encountered an error for ${targetOwner}/${targetRepoName}. Please review logs.`);
-                    overallSuccess = false; // Optionally mark the overall sync as problematic
-                }
-              }
-              core.info(`--- Finished cleanup of specific workflow files for ${targetOwner}/${targetRepoName} ---`);
-              
-
               core.info(`Syncing all existing issues to HisQu project for ${targetOwner}/${targetRepoName}...`);
               await addAllIssuesAndPullRequestsToHisQuProject(targetOwner, targetRepoName);
 
