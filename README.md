@@ -27,8 +27,6 @@
 - [Installing Instructions](#installing-instructions)
   * [Prerequesites](#prerequesites)
   * [Step by Step:](#step-by-step)
-- [Development](#development)
-- [Repository Standards](#repository-standards)
 
 <!-- tocstop -->
 
