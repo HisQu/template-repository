@@ -81,7 +81,7 @@ Every repository created from this template should contain:
 - [.gitignore](https://github.com/HisQu/.github-private/tree/main/coding-practices/GitIgnore)
 - [requirements.txt](https://github.com/HisQu/.github-private/tree/main/coding-practices/PythonRequirementsText)
 - [.env.example](https://github.com/HisQu/.github-private/tree/main/coding-practices/DotEnv)
-- CONTRIBUTING.md (optional)
+- [CONTRIBUTING.md](https://github.com/HisQu/.github-private/tree/main/coding-practices/CONTRIBUTING) (optional)
 - quick_setup.py or quicksetup.bat
 
 
