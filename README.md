@@ -82,6 +82,6 @@ Every repository created from this template should contain:
 - [requirements.txt](https://github.com/HisQu/.github-private/tree/main/coding-practices/PythonRequirementsText)
 - [.env.example](https://github.com/HisQu/.github-private/tree/main/coding-practices/DotEnv)
 - [CONTRIBUTING.md](https://github.com/HisQu/.github-private/tree/main/coding-practices/CONTRIBUTING) (optional)
-- quick_setup.py or quicksetup.bat
+- [quick_setup.py or quicksetup.bat or similiar](https://github.com/HisQu/.github-private/tree/main/coding-practices/QuickstartSetup)
 
 
