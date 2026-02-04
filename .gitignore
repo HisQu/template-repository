@@ -1,0 +1,181 @@
+########## Entwickler spezifisch #########
+# ergänzen Sie hier ihre Einträge
+
+########## MacOS #########
+# Finder-Metadaten
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon- und Ordner-Infos
+Icon?
+._*
+
+# Spotlight / Suche
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Netzwerk-Volumes
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+########## Windows #########
+# Explorer-Cache
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+
+# Verknüpfungen
+*.lnk
+
+# Sicherheitszonen-Infos (Dateien aus Internet/Netzwerk)
+*Zone.Identifier
+
+# Office / Editor Backups
+*.asd
+~$*
+*.wbk
+
+# Papierkorb & Systeminfos
+$RECYCLE.BIN/
+System Volume Information/
+
+########## Linux #########
+# Editor-Backups
+*~
+
+# NFS-Temporärdateien
+.nfs*
+
+# Trash & Metadaten (je nach Desktop-Umgebung)
+.Trash-*
+.directory
+
+# GVFS / Netzlaufwerke
+.gvfs
+
+########## IDE & Editor #########
+# VS Code
+.vscode/
+
+# JetBrains IDEs (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+
+# Visual Studio
+*.suo
+*.user
+*.userossc
+*.sln.docstates
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+########## logs #########
+*.log
+logs/
+
+########## Temporäre Dateien #########
+*.tmp
+*.bak
+*.old
+*.orig
+*.rej
+
+########## Kompilierte Dateien #########
+# Java
+*.class
+
+# C / C++
+*.o
+*.obj
+*.so
+*.a
+*.out
+
+# Bytecode (automatisch von Python erzeugt)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C-Extensions / kompilierte Module
+*.so      # Linux / macOS
+*.pyd     # Windows
+*.dll     # selten, aber möglich bei Extensions
+
+# Distribution / Build Artefakte
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Installer / Packages
+*.egg
+*.whl
+
+# PyInstaller / cx_Freeze
+*.spec
+*.manifest
+
+# Coverage / Test Artefakte
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Type Checker
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints
+
+
+########## Dependencies #########
+# Allgemeine Build-Ordner
+build/
+out/
+dist/
+target/
+bin/
+
+# Node
+node_modules/
+
+# PHP / Composer
+vendor/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Ruby
+.bundle/
+vendor/bundle
+
+########## ENV & Lokale Abhängigkeiten #########
+.env
+.env.*
+!.env.example
+
+# Lokale Konfigs
+*.local
+*.secret
